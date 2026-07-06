@@ -11,7 +11,7 @@ from typing import Protocol, cast
 
 import requests
 
-from appeal_tool.errors import DataAccessError, NotFoundError
+from appeal_tool.errors import DataAccessError, DataErrorKind, NotFoundError
 from appeal_tool.models import (
     AddressCandidate,
     AssessmentHistoryRow,
@@ -200,7 +200,10 @@ class SocrataClient:
 
     def fetch_all(self, dataset_key: str, params: dict[str, str]) -> SocrataResponse:
         if dataset_key not in DATASETS:
-            raise DataAccessError(f"Unknown Socrata dataset '{dataset_key}'.")
+            raise DataAccessError(
+                f"Unknown Socrata dataset '{dataset_key}'.",
+                DataErrorKind.UNKNOWN_DATASET,
+            )
         rows: list[JsonDict] = []
         warnings: list[str] = []
         offset = 0
@@ -226,7 +229,10 @@ class SocrataClient:
             if age <= self.ttl:
                 cached = json.loads(cache_key.read_text(encoding="utf-8"))
                 if not isinstance(cached, list):
-                    raise DataAccessError(f"Cached Socrata response was invalid for {dataset_key}.")
+                    raise DataAccessError(
+                        f"Cached Socrata response was invalid for {dataset_key}.",
+                        DataErrorKind.INVALID_CACHE,
+                    )
                 return [cast(JsonDict, row) for row in cached if isinstance(row, dict)]
         url = f"{SOCRATA_DOMAIN}/{DATASETS[dataset_key]}.json"
         headers = {"X-App-Token": self.app_token} if self.app_token else {}
@@ -238,24 +244,39 @@ class SocrataClient:
                 )
                 if response.status_code in {429, 500, 502, 503, 504}:
                     raise DataAccessError(
-                        f"Socrata transient HTTP {response.status_code} for {dataset_key}."
+                        f"Socrata transient HTTP {response.status_code} for {dataset_key}.",
+                        DataErrorKind.TRANSIENT_HTTP,
                     )
                 response.raise_for_status()
                 data = response.json()
                 if not isinstance(data, list):
-                    raise DataAccessError(f"Socrata returned non-list JSON for {dataset_key}.")
+                    raise DataAccessError(
+                        f"Socrata returned non-list JSON for {dataset_key}.",
+                        DataErrorKind.INVALID_JSON,
+                    )
                 if not self.no_cache:
                     self.cache_dir.mkdir(parents=True, exist_ok=True)
                     cache_key.write_text(json.dumps(data), encoding="utf-8")
                 return [cast(JsonDict, row) for row in data if isinstance(row, dict)]
+            except requests.HTTPError as exc:
+                last_error = DataAccessError(
+                    f"Socrata HTTP error for {dataset_key}: {exc}",
+                    DataErrorKind.HTTP_ERROR,
+                )
+                if attempt == self.max_retries - 1:
+                    break
+                sleep_seconds = (0.5 * (2**attempt)) + random.uniform(0, 0.25)
+                time.sleep(sleep_seconds)
             except (requests.RequestException, DataAccessError, ValueError) as exc:
                 last_error = exc
                 if attempt == self.max_retries - 1:
                     break
                 sleep_seconds = (0.5 * (2**attempt)) + random.uniform(0, 0.25)
                 time.sleep(sleep_seconds)
+        kind = last_error.kind if isinstance(last_error, DataAccessError) else DataErrorKind.NETWORK
         raise DataAccessError(
-            f"Socrata request failed for {dataset_key}: {last_error}"
+            f"Socrata request failed for {dataset_key}: {last_error}",
+            kind,
         ) from last_error
 
     def _cache_key(self, dataset_key: str, params: dict[str, str]) -> Path:

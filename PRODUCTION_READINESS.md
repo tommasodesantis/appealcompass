@@ -7,7 +7,7 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - [x] All three venue packets (CCAO, BOR, PTAB) generate correctly from the same shared case file, each validated by an automated PDF content check.
 - [x] PTAB deadline is only ever computed from a user-supplied BOR decision date; the tool refuses to guess and clearly asks for it.
 - [x] No unhandled tracebacks reachable via CLI inputs (fuzz the CLI with garbage to confirm).
-- [ ] All network I/O has timeouts, retries with backoff, pagination, caching, and classified errors.
+- [x] All network I/O has timeouts, retries with backoff, pagination, caching, and classified errors.
 - [x] Comparable-selection and all financial math covered by known-answer tests; >=85% line coverage on core analysis modules.
 - [x] Condos, missing-data parcels, closed-deadline townships, and unknown townships produce correct, honest, non-crashing output at every venue (each has a test).
 - [x] Time-sensitive constants centralized in config with staleness warnings that actually fire.
@@ -30,3 +30,9 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - Expanded CLI smoke tests to run single-family, condo, missing-characteristics, and unknown-township fixtures through venue paths.
 - Expanded PDF content tests across Assessor, BOR, PTAB, and closed-window packets.
 - Full verifier passes via `python scripts/verify.py` with 55 tests.
+
+### Iteration 3
+
+- Added `DataErrorKind` classification for Socrata/network failures.
+- Added tests for transient retry, pagination, cache reuse, invalid JSON/cache, and unknown dataset handling.
+- Full verifier passes via `python scripts/verify.py` with 59 tests.
