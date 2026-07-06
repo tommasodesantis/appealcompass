@@ -2,7 +2,7 @@
 
 Created from the mission exit criteria. Check a box only when the criterion is verified, not assumed.
 
-- [ ] Single CLI entry point; zero Colab artifacts; `pip install -r requirements.txt && python appeal_tool.py --pin <PIN>` works on a clean machine.
+- [x] Single CLI entry point; zero Colab artifacts; `pip install -r requirements.txt && python appeal_tool.py --pin <PIN>` works on a clean machine.
 - [x] Venue routing produces the correct venue + reasoning for: CCAO open, BOR open, both closed, PTAB-eligible (decision date given), and PTAB-expired scenarios, each covered by a test with a mocked date.
 - [x] All three venue packets (CCAO, BOR, PTAB) generate correctly from the same shared case file, each validated by an automated PDF content check.
 - [x] PTAB deadline is only ever computed from a user-supplied BOR decision date; the tool refuses to guess and clearly asks for it.
@@ -12,8 +12,8 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - [x] Condos, missing-data parcels, closed-deadline townships, and unknown townships produce correct, honest, non-crashing output at every venue (each has a test).
 - [x] Time-sensitive constants centralized in config with staleness warnings that actually fire.
 - [x] `ruff`, `mypy`, `pytest`, and the E2E smoke suite all pass via one `verify` command.
-- [ ] README + disclaimers complete; `PRODUCTION_READINESS.md` fully checked; `.gitignore` prevents artifact commits.
-- [ ] Two consecutive full verification runs pass with zero code changes needed (stability confirmation).
+- [x] README + disclaimers complete; `PRODUCTION_READINESS.md` fully checked; `.gitignore` prevents artifact commits.
+- [x] Two consecutive full verification runs pass with zero code changes needed (stability confirmation).
 
 ## Iteration Notes
 
@@ -43,3 +43,10 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - Added `.gitignore` generated-artifact checks.
 - Added README assertions for venue ladder, Socrata token documentation, and exact `NOT LEGAL ADVICE` wording.
 - Full verifier passes via `python scripts/verify.py` with 62 tests.
+
+### Iteration 5
+
+- Verified runtime installation in a clean workspace-local venv using `pip install -r requirements.txt`.
+- Verified fixture-backed CLI/PDF generation from the clean venv.
+- Verified live no-fixture Socrata CLI and default PDF generation for PIN `03-27-402-011-0000` with network access.
+- Added local venv ignore patterns and completed the two-run stability gate.

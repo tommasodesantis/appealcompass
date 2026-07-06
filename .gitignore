@@ -3,6 +3,8 @@
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.clean_venv/
+.venv/
 __pycache__/
 *.py[cod]
 packet_*.pdf
