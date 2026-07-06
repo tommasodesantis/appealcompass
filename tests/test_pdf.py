@@ -27,7 +27,7 @@ def _text(path: object) -> str:
 @pytest.mark.parametrize(
     ("route_date", "venue", "decision_date", "expected_section"),
     [
-        (date(2025, 2, 15), "assessor", None, "Assessor Filing Instructions"),
+        (date(2026, 5, 1), "assessor", None, "Assessor Filing Instructions"),
         (date(2025, 7, 10), "bor", None, "BOR Filing Instructions"),
         (date(2026, 6, 1), "ptab", date(2026, 5, 20), "PTAB Filing Instructions"),
     ],

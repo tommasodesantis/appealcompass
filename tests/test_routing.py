@@ -2,14 +2,31 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from appeal_tool.routing import route_case
 
 
-def test_routes_to_assessor_when_ccao_window_open() -> None:
-    route = route_case("Rogers Park", date(2025, 2, 15), "auto")
+@pytest.mark.parametrize(
+    ("township", "today", "deadline"),
+    [
+        ("Berwyn", date(2026, 7, 6), date(2026, 7, 6)),
+        ("Cicero", date(2026, 7, 6), date(2026, 7, 31)),
+        ("Palos", date(2026, 7, 6), date(2026, 7, 17)),
+        ("Lakeview", date(2026, 7, 6), date(2026, 7, 13)),
+        ("Maine", date(2026, 7, 6), date(2026, 7, 21)),
+        ("Elk Grove", date(2026, 7, 6), date(2026, 8, 4)),
+        ("Stickney", date(2026, 7, 6), date(2026, 8, 12)),
+    ],
+)
+def test_routes_to_assessor_when_authority_ccao_window_open(
+    township: str, today: date, deadline: date
+) -> None:
+    route = route_case(township, today, "auto")
     assert route.venue == "assessor"
     assert route.action_status == "open"
-    assert route.deadline == date(2025, 3, 3)
+    assert route.deadline == deadline
+    assert not any("partially configured" in warning for warning in route.warnings)
 
 
 def test_routes_to_bor_when_bor_window_open() -> None:
@@ -20,7 +37,7 @@ def test_routes_to_bor_when_bor_window_open() -> None:
 
 
 def test_routes_to_closed_when_all_windows_closed() -> None:
-    route = route_case("Rogers Park", date(2026, 7, 6), "auto")
+    route = route_case("Rogers Park", date(2027, 1, 1), "auto")
     assert route.venue == "closed"
     assert route.action_status == "closed"
     assert any("Certificate of Error" in reason for reason in route.reasoning)

@@ -15,6 +15,34 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - [x] README + disclaimers complete; `PRODUCTION_READINESS.md` fully checked; `.gitignore` prevents artifact commits.
 - [x] Two consecutive full verification runs pass with zero code changes needed (stability confirmation).
 
+## Phase 2 Hardening Checklist
+
+- [x] Every township window in `appeal_tool/config.py` matches the provided authority calendar
+      file; the cross-check diff report exists in `reports/`; no township that the authority file
+      shows as open on a mocked in-window date is routed as closed.
+- [ ] The venue comparable-expectation matrix has been verified against official sources,
+      corrected where needed, and encoded as documented per-venue comparable profiles.
+- [ ] A comparable-evidence feasibility report exists with measured field availability, pool
+      survival, runtime, and per-venue verdicts across at least 15 diverse real properties.
+- [ ] Venue-aware comparable selection/exhibits are implemented for every venue judged feasible;
+      unavailable PTAB grid fields are explicitly marked as user-supply items, never fabricated.
+- [ ] Condo comparable analysis is gated by measured missing-data rates with the <30%, 30-50%,
+      and >50% behavior bands, each covered by tests; the blanket condo skip is gone.
+- [ ] Missing subject sqft/AV cases accept documented user-supplied overrides, clearly labeled as
+      user-supplied in console and PDF, with actionable re-run guidance when data is missing and
+      no override was given.
+- [ ] Live comparables are enriched with parcel-universe fields; the live test validates
+      user-facing evidence quality across at least 10 diverse properties and fails on quality
+      regressions; superseded live-test logic is removed.
+- [ ] Local-snapshot feasibility report exists with per-dataset size/time/memory estimates and a
+      practicality verdict; no snapshot architecture was built without it.
+- [ ] Concurrency probe report exists with measured throttle behavior and an estimated
+      simultaneous-user ceiling with and without app token.
+- [ ] `BLOCKERS.md` documents every feasibility failure with measured evidence and a concrete
+      fallback strategy.
+- [ ] `python scripts/verify.py` passes end-to-end; all Phase 1 guarantees remain intact.
+- [ ] Two consecutive full verification runs pass with zero code changes needed.
+
 ## Iteration Notes
 
 ### Iteration 1
@@ -57,3 +85,13 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - Added live-source hardening for configured assessment-year selection, missing address/schema warnings, and de-duplicated pagination warnings.
 - Added `scripts/live_smoke.py` for a reproducible 10-property live CLI/PDF smoke run across suburban/city, single-family/condo/multi-family samples.
 - Verified all 10 live properties completed with user-facing output and PDFs that opened, extracted, rendered, and showed no automated or manual first-page layout failures.
+
+### Phase 2 Iteration 1
+
+- Extracted the provided authority PDF last updated 6/29/26 into
+  `reports/deadline_crosscheck_2026-07-06.md` and JSON.
+- Replaced the stale 2025 partial CCAO scaffold with 2026 Assessor windows and explicit rows for
+  all 38 townships.
+- Added routing regressions for seven authority-file open townships plus a config/report sync test.
+- BOR dates were not changed because the Assessor PDF lists only BOR pass markers, not BOR
+  open/close/evidence deadlines; see `BLOCKERS.md`.

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
 
-ASSESSMENT_YEAR = 2025
+ASSESSMENT_YEAR = 2026
 STATE_EQUALIZER = 3.0163
 DEFAULT_TAX_RATE = 0.10
 ASSESSMENT_LEVEL = 0.10
@@ -68,20 +68,58 @@ def d(value: str) -> date:
 
 CCAO_CALENDAR = CalendarConfig(
     venue_label="Cook County Assessor",
-    session_label="Tax Year 2025 Assessor Appeal Windows",
-    session_end=d("12/31/2025"),
+    session_label="Tax Year 2026 Assessor Appeal Windows",
+    session_end=d("8/12/2026"),
     source_url=CCAO_OFFICIAL_URL,
     source_note=(
-        "Official Assessor calendar page loaded through browser access on 2026-07-06, "
-        "but direct shell automation still returned CloudFront 403. Verify township windows "
-        "at the official source before filing."
+        "Manual authority file 'Assessment & Appeal Calendar _ Cook County Assessor's "
+        "Office.pdf' extracted on 2026-07-06 from the official Assessor calendar page, "
+        "which reported Last updated: 6/29/26. Direct shell automation still returned "
+        "CloudFront 403, so manually verify at the official source before filing."
     ),
 )
 
-# Partial Assessor window config retained only as a scaffold. Unknown townships must not be
-# treated as open; routing will instruct the user to verify at the official Assessor source.
+# The authority file contains every Cook County township row. Blank future rows are retained as
+# empty lists so known townships remain explicit without fabricating unavailable dates.
 CCAO_WINDOWS: dict[str, list[FilingWindow]] = {
-    "Rogers Park": [FilingWindow(d("2/1/2025"), d("3/3/2025"))],
+    "Barrington": [],
+    "Berwyn": [FilingWindow(d("5/20/2026"), d("7/6/2026"))],
+    "Bloom": [],
+    "Bremen": [],
+    "Calumet": [],
+    "Cicero": [FilingWindow(d("6/17/2026"), d("7/31/2026"))],
+    "Elk Grove": [FilingWindow(d("6/22/2026"), d("8/4/2026"))],
+    "Evanston": [FilingWindow(d("4/22/2026"), d("6/4/2026"))],
+    "Hanover": [],
+    "Hyde Park": [],
+    "Jefferson": [],
+    "Lake": [],
+    "Lakeview": [FilingWindow(d("5/28/2026"), d("7/13/2026"))],
+    "Lemont": [],
+    "Leyden": [],
+    "Lyons": [],
+    "Maine": [FilingWindow(d("6/5/2026"), d("7/21/2026"))],
+    "New Trier": [FilingWindow(d("5/7/2026"), d("6/22/2026"))],
+    "Niles": [],
+    "North Chicago": [],
+    "Northfield": [],
+    "Norwood Park": [FilingWindow(d("4/13/2026"), d("5/26/2026"))],
+    "Oak Park": [FilingWindow(d("5/6/2026"), d("6/18/2026"))],
+    "Orland": [],
+    "Palatine": [],
+    "Palos": [FilingWindow(d("6/3/2026"), d("7/17/2026"))],
+    "Proviso": [],
+    "Rich": [],
+    "River Forest": [FilingWindow(d("4/20/2026"), d("6/2/2026"))],
+    "Riverside": [FilingWindow(d("4/24/2026"), d("6/8/2026"))],
+    "Rogers Park": [FilingWindow(d("4/17/2026"), d("6/1/2026"))],
+    "Schaumburg": [],
+    "South Chicago": [],
+    "Stickney": [FilingWindow(d("6/29/2026"), d("8/12/2026"))],
+    "Thornton": [],
+    "West Chicago": [],
+    "Wheeling": [],
+    "Worth": [],
 }
 
 BOR_CALENDAR = CalendarConfig(

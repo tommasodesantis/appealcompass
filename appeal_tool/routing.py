@@ -120,8 +120,7 @@ def route_case(
             action_status=assessor_status,
             deadline=ccao_deadline,
             days_remaining=ccao_days,
-            warnings=warnings
-            + ("CCAO township windows are partially configured; verify at the official site.",),
+            warnings=warnings,
             official_url=CCAO_OFFICIAL_URL,
         )
 
