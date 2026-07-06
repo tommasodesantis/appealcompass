@@ -44,6 +44,14 @@ def money(value: float | None) -> str:
     return "Not available" if value is None else f"${value:,.0f}"
 
 
+def comparable_metric_value(
+    profile_key: str, comp_av: float | None, improvement_av: float | None
+) -> float | None:
+    if profile_key in {"bor", "ptab"}:
+        return improvement_av
+    return comp_av
+
+
 class PacketPdf(FPDF):  # type: ignore[misc]
     def __init__(self, title: str) -> None:
         super().__init__()
@@ -145,17 +153,19 @@ def write_packet(
 
     pdf.h1("Comparable Assessments")
     comps = evidence.comparable_analysis
+    pdf.kv("Comparable profile", comps.profile_label)
+    pdf.kv("Assessment metric", comps.metric_label)
     pdf.para(comps.note)
     if comps.status == "ok":
         pdf.para(
-            f"Subject AV/sqft ${comps.subject_av_per_sqft:,.2f}; "
+            f"Subject {comps.metric_label}/sqft ${comps.subject_av_per_sqft:,.2f}; "
             f"median ${comps.median_av_per_sqft:,.2f}; percentile {comps.percentile:.0f}; "
             f"gap {comps.gap_pct:.0f}%."
         )
         pdf.set_font("Helvetica", "B", 7)
         widths = [35, 62, 18, 20, 20, 16]
         for label, width in zip(
-            ("PIN", "Address", "Sqft", "AV", "AV/sf", "km"), widths, strict=True
+            ("PIN", "Address", "Sqft", "Metric", "Metric/sf", "km"), widths, strict=True
         ):
             pdf.cell(width, 5, label, 1)
         pdf.ln()
@@ -166,7 +176,7 @@ def write_packet(
                 comp.pin_formatted,
                 comp.address[:36],
                 f"{comp.building_sqft:,.0f}" if comp.building_sqft else "Missing",
-                money(comp.av),
+                money(comparable_metric_value(comps.profile_key, comp.av, comp.improvement_av)),
                 f"${exhibit.av_per_sqft:,.2f}",
                 "n/a" if exhibit.distance_km is None else f"{exhibit.distance_km:.2f}",
             ]

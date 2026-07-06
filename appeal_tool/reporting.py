@@ -47,6 +47,13 @@ def console_report(
             "EVIDENCE",
             f"Tier: {evidence.tier}",
             evidence.tier_message,
+            (
+                "Comparable profile: "
+                f"{evidence.comparable_analysis.profile_label} "
+                f"({evidence.comparable_analysis.metric_label})"
+            ),
+            f"Comparable status: {evidence.comparable_analysis.status}",
+            f"Comparable note: {evidence.comparable_analysis.note}",
         ]
     )
     if evidence.arguments:
@@ -91,6 +98,9 @@ def json_summary(
         "deadline": route.deadline.isoformat() if route.deadline else None,
         "days_remaining": route.days_remaining,
         "evidence_tier": evidence.tier,
+        "comparable_profile": evidence.comparable_analysis.profile_key,
+        "comparable_status": evidence.comparable_analysis.status,
+        "comparable_note": evidence.comparable_analysis.note,
         "estimated_savings_point": evidence.savings_assumptions.point,
         "warnings": list(route.warnings) + list(case.data_warnings),
         "pdf_path": str(pdf_path) if pdf_path else None,

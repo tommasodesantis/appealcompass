@@ -20,7 +20,7 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - [x] Every township window in `appeal_tool/config.py` matches the provided authority calendar
       file; the cross-check diff report exists in `reports/`; no township that the authority file
       shows as open on a mocked in-window date is routed as closed.
-- [ ] The venue comparable-expectation matrix has been verified against official sources,
+- [x] The venue comparable-expectation matrix has been verified against official sources,
       corrected where needed, and encoded as documented per-venue comparable profiles.
 - [x] A comparable-evidence feasibility report exists with measured field availability, pool
       survival, runtime, and per-venue verdicts across at least 15 diverse real properties.
@@ -119,3 +119,16 @@ Created from the mission exit criteria. Check a box only when the criterion is v
   observed in both modes.
 - Under the revised plan, local snapshot feasibility is not triggered because token-backed
   concurrency did not show poor capacity at the 4-user practical ceiling.
+
+### Phase 2 Iteration 4
+
+- Added documented Assessor, BOR, and PTAB comparable profiles in
+  `appeal_tool/comparable_profiles.py`.
+- Updated the shared comparable engine to apply the active venue profile instead of one
+  hard-coded Assessor-style filter.
+- Implemented venue-specific metrics for feasible profiles: Assessor uses total AV/sqft and BOR
+  uses building/improvement assessment per sqft.
+- Enriched live comparable rows with parcel-universe address, neighborhood, coordinates, land
+  sqft, style, amenities, and improvement AV fields.
+- Added synthetic known-answer tests for Assessor, BOR, and PTAB profile behavior plus a
+  repository regression test for enriched live comparables.

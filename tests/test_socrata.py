@@ -154,3 +154,115 @@ def test_socrata_repository_surfaces_missing_live_fields() -> None:
     assert "did not include a property address" in warnings
     assert "Residential characteristics were unavailable" in warnings
     assert "Current assessed value was unavailable" in warnings
+
+
+class EnrichedComparableClient:
+    def fetch_all(self, dataset_key: str, params: dict[str, str]) -> SocrataResponse:
+        where = params.get("$where", "")
+        if dataset_key == "parcel_universe" and "pin='03000000000001'" in where:
+            return SocrataResponse(
+                rows=[
+                    {
+                        "pin": "03000000000001",
+                        "class": "203",
+                        "township_name": "Rogers Park",
+                        "township_code": "01",
+                        "prop_address_full": "1000 N MOZART ST",
+                        "nbhd_code": "0101",
+                        "lat": "41.9901",
+                        "lon": "-87.6971",
+                    }
+                ],
+                warnings=(),
+            )
+        if dataset_key == "res_characteristics" and "pin='03000000000001'" in where:
+            return SocrataResponse(
+                rows=[
+                    {
+                        "pin": "03000000000001",
+                        "class": "203",
+                        "township_code": "01",
+                        "char_bldg_sf": "1800",
+                        "char_land_sf": "3750",
+                        "char_yrblt": "1924",
+                    }
+                ],
+                warnings=(),
+            )
+        if dataset_key == "assessed_values" and "pin='03000000000001'" in where:
+            return SocrataResponse(
+                rows=[
+                    {
+                        "pin": "03000000000001",
+                        "year": "2025",
+                        "mailed_tot": "60000",
+                        "mailed_bldg": "50000",
+                    }
+                ],
+                warnings=(),
+            )
+        if dataset_key == "parcel_sales":
+            return SocrataResponse(rows=[], warnings=())
+        if dataset_key == "res_characteristics":
+            return SocrataResponse(
+                rows=[
+                    {
+                        "pin": "03000000000002",
+                        "class": "203",
+                        "township_code": "01",
+                        "char_bldg_sf": "1750",
+                        "char_land_sf": "3700",
+                        "char_yrblt": "1922",
+                        "char_type_resd": "1 Story",
+                        "char_ext_wall": "Frame",
+                        "char_cnst_qlty": "Average",
+                        "char_air": "Central A/C",
+                    }
+                ],
+                warnings=(),
+            )
+        if dataset_key == "assessed_values":
+            return SocrataResponse(
+                rows=[
+                    {
+                        "pin": "03000000000002",
+                        "year": "2025",
+                        "mailed_tot": "40000",
+                        "mailed_bldg": "32000",
+                    }
+                ],
+                warnings=(),
+            )
+        if dataset_key == "parcel_universe":
+            return SocrataResponse(
+                rows=[
+                    {
+                        "pin": "03000000000002",
+                        "class": "203",
+                        "township_name": "Rogers Park",
+                        "township_code": "01",
+                        "prop_address_full": "1004 N MOZART ST",
+                        "nbhd_code": "0101",
+                        "lat": "41.9902",
+                        "lon": "-87.6972",
+                    }
+                ],
+                warnings=(),
+            )
+        raise AssertionError(f"Unexpected query {dataset_key}: {where}")
+
+
+def test_socrata_repository_enriches_live_comparables() -> None:
+    repo = SocrataRepository(client=EnrichedComparableClient())  # type: ignore[arg-type]
+    case = repo.load_case_by_pin("03-00-000-000-0001")
+    assert case.parcel.current_improvement_av == 50000
+    assert case.comparables
+    comp = case.comparables[0]
+    assert comp.address == "1004 N MOZART ST"
+    assert comp.neighborhood == "0101"
+    assert comp.lat == 41.9902
+    assert comp.lon == -87.6972
+    assert comp.improvement_av == 32000
+    assert comp.land_sqft == 3700
+    assert comp.style == "1 Story|Frame|Average"
+    assert comp.amenity_count == 1

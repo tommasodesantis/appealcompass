@@ -23,11 +23,14 @@ class Parcel:
     building_sqft: float | None = None
     land_sqft: float | None = None
     year_built: int | None = None
+    style: str | None = None
+    amenity_count: int = 0
     beds: float | None = None
     full_baths: float | None = None
     lat: float | None = None
     lon: float | None = None
     current_av: float | None = None
+    current_improvement_av: float | None = None
     prior_final_av: float | None = None
 
     @property
@@ -43,6 +46,10 @@ class Comparable:
     building_sqft: float | None
     year_built: int | None
     av: float | None
+    improvement_av: float | None = None
+    land_sqft: float | None = None
+    style: str | None = None
+    amenity_count: int = 0
     neighborhood: str | None = None
     lat: float | None = None
     lon: float | None = None
@@ -115,6 +122,9 @@ class ComparableExhibit:
 class ComparableAnalysis:
     status: Literal["ok", "condo", "insufficient_data"]
     note: str
+    profile_key: str = "assessor"
+    profile_label: str = "Cook County Assessor"
+    metric_label: str = "assessed value"
     scope: str | None = None
     pool_size: int = 0
     subject_av_per_sqft: float | None = None

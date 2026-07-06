@@ -5,6 +5,11 @@ from datetime import date
 from statistics import median
 from typing import Literal
 
+from appeal_tool.comparable_profiles import (
+    ASSESSOR_PROFILE,
+    ComparableProfile,
+    profile_for_venue,
+)
 from appeal_tool.config import ASSESSMENT_LEVEL, NOT_LEGAL_ADVICE, STATE_EQUALIZER
 from appeal_tool.math_utils import estimated_savings_range, gap_pct, percentile_rank, safe_div
 from appeal_tool.models import (
@@ -15,6 +20,8 @@ from appeal_tool.models import (
     EvidenceArgument,
     EvidenceSummary,
     EvidenceTier,
+    Parcel,
+    ResolvedVenue,
     SavingsAssumption,
 )
 
@@ -51,47 +58,145 @@ def _similarity(subject: CaseFile, comp: Comparable) -> float:
     return score
 
 
-def analyze_comparables(case: CaseFile, max_comps: int = 10) -> ComparableAnalysis:
+def _subject_metric_value(parcel: Parcel, profile: ComparableProfile) -> float | None:
+    if profile.metric == "improvement_av":
+        return parcel.current_improvement_av
+    return parcel.current_av
+
+
+def _comparable_metric_value(comp: Comparable, profile: ComparableProfile) -> float | None:
+    if profile.metric == "improvement_av":
+        return comp.improvement_av
+    return comp.av
+
+
+def _profiled_analysis(
+    *,
+    status: Literal["ok", "condo", "insufficient_data"],
+    note: str,
+    profile: ComparableProfile,
+    scope: str | None = None,
+    pool_size: int = 0,
+    subject_av_per_sqft: float | None = None,
+    median_av_per_sqft: float | None = None,
+    percentile: float | None = None,
+    gap: float | None = None,
+    exhibit: tuple[ComparableExhibit, ...] = (),
+) -> ComparableAnalysis:
+    return ComparableAnalysis(
+        status=status,
+        note=note,
+        profile_key=profile.key,
+        profile_label=profile.venue_label,
+        metric_label=profile.metric_label,
+        scope=scope,
+        pool_size=pool_size,
+        subject_av_per_sqft=subject_av_per_sqft,
+        median_av_per_sqft=median_av_per_sqft,
+        percentile=percentile,
+        gap_pct=gap,
+        exhibit=exhibit,
+    )
+
+
+def _passes_year_filter(parcel: Parcel, comp: Comparable, profile: ComparableProfile) -> bool:
+    tolerance = profile.similarity_steps[-1].year_tolerance
+    if profile.require_year:
+        return (
+            parcel.year_built is not None
+            and comp.year_built is not None
+            and abs(comp.year_built - parcel.year_built) <= tolerance
+        )
+    return (
+        parcel.year_built is None
+        or comp.year_built is None
+        or abs(comp.year_built - parcel.year_built) <= tolerance
+    )
+
+
+def _passes_profile_requirements(
+    parcel: Parcel, comp: Comparable, profile: ComparableProfile
+) -> bool:
+    if not _passes_year_filter(parcel, comp, profile):
+        return False
+    if profile.require_land:
+        if not parcel.land_sqft or not comp.land_sqft:
+            return False
+        tolerance = profile.land_tolerance or 1.0
+        low = parcel.land_sqft * (1 - tolerance)
+        high = parcel.land_sqft * (1 + tolerance)
+        if not low <= comp.land_sqft <= high:
+            return False
+    if profile.require_style:
+        if parcel.style and comp.style != parcel.style:
+            return False
+        if not parcel.style and not comp.style:
+            return False
+    return not (profile.require_amenity and comp.amenity_count <= 0)
+
+
+def _target_total_av(
+    parcel: Parcel, profile: ComparableProfile, target_metric_value: float
+) -> float:
+    if profile.metric == "improvement_av" and parcel.current_improvement_av and parcel.current_av:
+        reduction = max(0.0, parcel.current_improvement_av - target_metric_value)
+        return max(0.0, parcel.current_av - reduction)
+    return target_metric_value
+
+
+def analyze_comparables(
+    case: CaseFile,
+    max_comps: int = 10,
+    profile: ComparableProfile = ASSESSOR_PROFILE,
+) -> ComparableAnalysis:
     parcel = case.parcel
     if parcel.is_condo:
-        return ComparableAnalysis(
+        return _profiled_analysis(
             status="condo",
             note=(
                 "Condo parcel: public unit square-foot coverage is often incomplete. "
                 "Use building-level equity, sale, appraisal, or factual-error evidence."
             ),
+            profile=profile,
         )
 
-    subject_psf = safe_div(parcel.current_av, parcel.building_sqft)
+    subject_metric_value = _subject_metric_value(parcel, profile)
+    subject_psf = safe_div(subject_metric_value, parcel.building_sqft)
     if subject_psf is None or parcel.building_sqft is None or parcel.building_sqft <= 0:
-        return ComparableAnalysis(
+        return _profiled_analysis(
             status="insufficient_data",
-            note="Missing subject building square footage or current assessed value.",
+            note=(
+                "Missing subject building square footage or "
+                f"{profile.metric_label}; re-run with documented user-supplied values if "
+                "available."
+            ),
+            profile=profile,
         )
 
     candidates = [
         comp
         for comp in case.comparables
         if comp.pin != parcel.pin
-        and comp.av is not None
-        and comp.av > 0
+        and (metric_value := _comparable_metric_value(comp, profile)) is not None
+        and metric_value > 0
         and comp.building_sqft is not None
         and comp.building_sqft > 0
+        and _passes_profile_requirements(parcel, comp, profile)
     ]
     selected: list[Comparable] = []
     scope = "township"
-    for sqft_tol, year_tol in ((0.25, 15), (0.40, 25), (0.60, 40)):
+    for step in profile.similarity_steps:
         scoped = [
             comp
             for comp in candidates
             if comp.building_sqft is not None
-            and parcel.building_sqft * (1 - sqft_tol)
+            and parcel.building_sqft * (1 - step.sqft_tolerance)
             <= comp.building_sqft
-            <= parcel.building_sqft * (1 + sqft_tol)
+            <= parcel.building_sqft * (1 + step.sqft_tolerance)
             and (
                 parcel.year_built is None
                 or comp.year_built is None
-                or abs(comp.year_built - parcel.year_built) <= year_tol
+                or abs(comp.year_built - parcel.year_built) <= step.year_tolerance
             )
         ]
         neighborhood = [
@@ -99,34 +204,40 @@ def analyze_comparables(case: CaseFile, max_comps: int = 10) -> ComparableAnalys
             for comp in scoped
             if parcel.neighborhood is not None and comp.neighborhood == parcel.neighborhood
         ]
-        if len(neighborhood) >= 15:
+        if len(neighborhood) >= profile.prefer_same_neighborhood_minimum:
             selected = neighborhood
             scope = "neighborhood"
         else:
             selected = scoped
             scope = "township"
-        if len(selected) >= 8:
+        if len(selected) >= profile.target_comparables:
             break
 
-    if len(selected) < 3:
-        return ComparableAnalysis(
+    if len(selected) < profile.minimum_comparables:
+        return _profiled_analysis(
             status="insufficient_data",
-            note=f"Only {len(selected)} similar parcels found; too few for a reliable exhibit.",
+            note=(
+                f"Only {len(selected)} similar parcels found under the "
+                f"{profile.venue_label} profile; too few for a reliable exhibit."
+            ),
+            profile=profile,
             scope=scope,
             pool_size=len(selected),
         )
 
     av_psf_values = [
-        comp.av / comp.building_sqft
+        metric_value / comp.building_sqft
         for comp in selected
-        if comp.av is not None and comp.building_sqft is not None and comp.building_sqft > 0
+        if (metric_value := _comparable_metric_value(comp, profile)) is not None
+        and comp.building_sqft is not None
+        and comp.building_sqft > 0
     ]
     median_psf = median(av_psf_values)
     percentile = percentile_rank(subject_psf, av_psf_values)
     gap = gap_pct(subject_psf, av_psf_values)
     exhibits = []
     for comp in selected:
-        comp_psf = safe_div(comp.av, comp.building_sqft)
+        comp_psf = safe_div(_comparable_metric_value(comp, profile), comp.building_sqft)
         if comp_psf is None or comp_psf >= subject_psf:
             continue
         exhibits.append(
@@ -138,15 +249,19 @@ def analyze_comparables(case: CaseFile, max_comps: int = 10) -> ComparableAnalys
             )
         )
     exhibits = sorted(exhibits, key=lambda item: item.similarity)[:max_comps]
-    return ComparableAnalysis(
+    return _profiled_analysis(
         status="ok",
-        note="Comparable analysis completed from the shared case file.",
+        note=(
+            f"Comparable analysis completed with the {profile.venue_label} profile "
+            f"using {profile.metric_label} per square foot."
+        ),
+        profile=profile,
         scope=scope,
         pool_size=len(selected),
         subject_av_per_sqft=subject_psf,
         median_av_per_sqft=median_psf,
         percentile=percentile,
-        gap_pct=gap,
+        gap=gap,
         exhibit=tuple(exhibits),
     )
 
@@ -160,10 +275,14 @@ def assessment_shock_pct(case: CaseFile) -> float | None:
 
 
 def build_evidence_summary(
-    case: CaseFile, tax_rate: float, lien_date: date | None = None
+    case: CaseFile,
+    tax_rate: float,
+    lien_date: date | None = None,
+    venue: ResolvedVenue | None = None,
 ) -> EvidenceSummary:
     parcel = case.parcel
-    comparable_analysis = analyze_comparables(case)
+    profile = profile_for_venue(venue)
+    comparable_analysis = analyze_comparables(case, profile=profile)
     implied_market = parcel.current_av / ASSESSMENT_LEVEL if parcel.current_av else None
     arguments: list[EvidenceArgument] = []
     tier_points = 0
@@ -180,7 +299,8 @@ def build_evidence_summary(
         else:
             strength = "supporting"
         if gap > 0 and comparable_analysis.median_av_per_sqft and parcel.building_sqft:
-            target_av = comparable_analysis.median_av_per_sqft * parcel.building_sqft
+            target_metric = comparable_analysis.median_av_per_sqft * parcel.building_sqft
+            target_av = _target_total_av(parcel, profile, target_metric)
             _, point, _ = estimated_savings_range(
                 (parcel.current_av or 0) - target_av, STATE_EQUALIZER, tax_rate
             )
@@ -189,7 +309,8 @@ def build_evidence_summary(
                     argument_type="uniformity",
                     strength=strength,
                     text=(
-                        f"Your assessment per square foot is higher than {percentile:.0f}% "
+                        f"Your {profile.metric_label} per square foot is higher than "
+                        f"{percentile:.0f}% "
                         f"of {comparable_analysis.pool_size} similar homes and {gap:.0f}% "
                         "above their median."
                     ),

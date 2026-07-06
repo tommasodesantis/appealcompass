@@ -146,10 +146,14 @@ def main(argv: list[str] | None = None) -> int:
             bor_decision_date=bor_decision_date,
         )
         if route.action_status == "needs_input":
-            print(console_report(case, build_evidence_summary(case, tax_rate), route, None))
+            print(
+                console_report(
+                    case, build_evidence_summary(case, tax_rate, venue=route.venue), route, None
+                )
+            )
             return 2
 
-        evidence = build_evidence_summary(case, tax_rate)
+        evidence = build_evidence_summary(case, tax_rate, venue=route.venue)
         pdf_path = None
         if not args.no_pdf:
             pdf_path = write_packet(case, evidence, route, Path(args.output_dir))

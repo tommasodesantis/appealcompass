@@ -99,11 +99,14 @@ def _parcel_from_json(raw: JsonDict) -> Parcel:
         building_sqft=_float(raw.get("building_sqft")),
         land_sqft=_float(raw.get("land_sqft")),
         year_built=_int(raw.get("year_built")),
+        style=str(raw["style"]) if raw.get("style") else None,
+        amenity_count=int(_float(raw.get("amenity_count")) or 0),
         beds=_float(raw.get("beds")),
         full_baths=_float(raw.get("full_baths")),
         lat=_float(raw.get("lat")),
         lon=_float(raw.get("lon")),
         current_av=_float(raw.get("current_av")),
+        current_improvement_av=_float(raw.get("current_improvement_av")),
         prior_final_av=_float(raw.get("prior_final_av")),
     )
 
@@ -117,6 +120,10 @@ def _comparable_from_json(raw: JsonDict) -> Comparable:
         building_sqft=_float(raw.get("building_sqft")),
         year_built=_int(raw.get("year_built")),
         av=_float(raw.get("av")),
+        improvement_av=_float(raw.get("improvement_av")),
+        land_sqft=_float(raw.get("land_sqft")),
+        style=str(raw["style"]) if raw.get("style") else None,
+        amenity_count=int(_float(raw.get("amenity_count")) or 0),
         neighborhood=str(raw["neighborhood"]) if raw.get("neighborhood") else None,
         lat=_float(raw.get("lat")),
         lon=_float(raw.get("lon")),
@@ -370,7 +377,19 @@ class SocrataRepository:
                     f"Assessed values had no {ASSESSMENT_YEAR} row; using latest available "
                     f"year {fallback_year or 'unknown'}."
                 )
-        current = _latest_av(av_rows)
+        current, current_improvement, current_year = _latest_assessment_values(av_rows)
+        if av_rows and current is None and current_improvement is None:
+            fallback_response = self.client.fetch_all(
+                "assessed_values", {"$where": f"pin='{normalized}'"}
+            )
+            warnings.extend(fallback_response.warnings)
+            av_rows = fallback_response.rows
+            current, current_improvement, current_year = _latest_assessment_values(av_rows)
+            if current is not None or current_improvement is not None:
+                warnings.append(
+                    "Configured-year assessed-value row had no AV fields; using latest "
+                    f"value-bearing year {current_year or 'unknown'}."
+                )
         parcel = Parcel(
             pin=normalized,
             pin_formatted=format_pin(normalized),
@@ -384,11 +403,14 @@ class SocrataRepository:
             building_sqft=_float(_pick(char, "char_bldg_sf", "bldg_sf")),
             land_sqft=_float(_pick(char, "char_land_sf", "land_sf")),
             year_built=_int(_pick(char, "char_yrblt", "yrblt")),
+            style=_style_key(char),
+            amenity_count=_amenity_count(char),
             beds=_float(_pick(char, "char_beds")),
             full_baths=_float(_pick(char, "char_fbath")),
             lat=_float(_pick(universe, "lat", "latitude")),
             lon=_float(_pick(universe, "lon", "longitude")),
             current_av=current,
+            current_improvement_av=current_improvement,
             prior_final_av=None,
         )
         if not parcel.address:
@@ -473,6 +495,18 @@ class SocrataRepository:
         av_response = self.client.fetch_all("assessed_values", {"$where": year_where})
         warnings.extend(av_response.warnings)
         avs = av_response.rows
+        if avs and not any(_has_assessment_value(row) for row in avs):
+            prior_year = ASSESSMENT_YEAR - 1
+            prior_response = self.client.fetch_all(
+                "assessed_values", {"$where": f"{where} AND year='{prior_year}'"}
+            )
+            warnings.extend(prior_response.warnings)
+            if prior_response.rows:
+                avs = prior_response.rows
+                warnings.append(
+                    "Comparable assessed-value rows for the configured year had no AV fields; "
+                    f"using latest value-bearing rows from {prior_year}."
+                )
         if not avs:
             fallback_response = self.client.fetch_all("assessed_values", {"$where": where})
             warnings.extend(fallback_response.warnings)
@@ -482,32 +516,50 @@ class SocrataRepository:
                     "Comparable assessed values had no configured-year rows; using latest "
                     "available rows from the source."
                 )
-        av_rows_by_pin: dict[str, list[JsonDict]] = {}
-        for row in avs:
-            raw_pin = row.get("pin")
-            if not raw_pin:
-                continue
-            av_rows_by_pin.setdefault(normalize_pin(str(raw_pin)), []).append(row)
-        av_by_pin: dict[str, float] = {}
-        for comp_pin, rows in av_rows_by_pin.items():
-            value = _latest_av(rows)
-            if value:
-                av_by_pin[comp_pin] = value
+        universe_response = self.client.fetch_all("parcel_universe", {"$where": year_where})
+        warnings.extend(universe_response.warnings)
+        universe_rows = universe_response.rows
+        if not universe_rows:
+            fallback_response = self.client.fetch_all("parcel_universe", {"$where": where})
+            warnings.extend(fallback_response.warnings)
+            universe_rows = fallback_response.rows
+            if universe_rows:
+                warnings.append(
+                    "Comparable parcel-universe rows had no configured-year rows; using latest "
+                    "available rows from the source."
+                )
+        av_rows_by_pin = _group_by_pin(avs)
+        universe_by_pin = _group_by_pin(universe_rows)
         comps = []
         for row in chars:
             raw_pin = row.get("pin")
             if not raw_pin:
                 continue
             comp_pin = normalize_pin(str(raw_pin))
+            total_av, improvement_av, _ = _latest_assessment_values(
+                av_rows_by_pin.get(comp_pin, [])
+            )
+            universe = _latest_row(universe_by_pin[comp_pin]) if comp_pin in universe_by_pin else {}
             comps.append(
                 Comparable(
                     pin=comp_pin,
                     pin_formatted=format_pin(comp_pin),
-                    address="",
+                    address=str(_pick(universe, "prop_address_full", "property_address") or ""),
                     building_sqft=_float(_pick(row, "char_bldg_sf", "bldg_sf")),
                     year_built=_int(_pick(row, "char_yrblt", "yrblt")),
-                    av=av_by_pin.get(comp_pin),
-                    neighborhood=None,
+                    av=total_av,
+                    improvement_av=improvement_av,
+                    land_sqft=_float(_pick(row, "char_land_sf", "land_sf")),
+                    style=_style_key(row),
+                    amenity_count=_amenity_count(row),
+                    neighborhood=str(
+                        _pick(universe, "nbhd_code", "nbhd", "town_nbhd")
+                        or _pick(row, "nbhd")
+                        or ""
+                    )
+                    or None,
+                    lat=_float(_pick(universe, "lat", "latitude")),
+                    lon=_float(_pick(universe, "lon", "longitude")),
                 )
             )
         if not comps:
@@ -518,8 +570,66 @@ class SocrataRepository:
 
 
 def _latest_av(rows: list[JsonDict]) -> float | None:
-    if not rows:
-        return None
-    sorted_rows = sorted(rows, key=lambda row: _row_year(row) or 0)
-    row = sorted_rows[-1]
-    return _float(_pick(row, "mailed_tot", "certified_tot", "board_tot"))
+    total, _, _ = _latest_assessment_values(rows)
+    return total
+
+
+def _latest_assessment_values(
+    rows: list[JsonDict],
+) -> tuple[float | None, float | None, int | None]:
+    value_rows = [row for row in rows if _has_assessment_value(row)]
+    if not value_rows:
+        return None, None, None
+    row = _latest_row(value_rows)
+    total = _float(_pick(row, "board_tot", "certified_tot", "mailed_tot"))
+    improvement = _float(_pick(row, "board_bldg", "certified_bldg", "mailed_bldg"))
+    return total, improvement, _row_year(row)
+
+
+def _has_assessment_value(row: JsonDict) -> bool:
+    total = _float(_pick(row, "board_tot", "certified_tot", "mailed_tot"))
+    improvement = _float(_pick(row, "board_bldg", "certified_bldg", "mailed_bldg"))
+    return (total is not None and total > 0) or (improvement is not None and improvement > 0)
+
+
+def _group_by_pin(rows: list[JsonDict]) -> dict[str, list[JsonDict]]:
+    grouped: dict[str, list[JsonDict]] = {}
+    for row in rows:
+        raw_pin = row.get("pin")
+        if not raw_pin:
+            continue
+        try:
+            pin = normalize_pin(str(raw_pin))
+        except ValueError:
+            continue
+        grouped.setdefault(pin, []).append(row)
+    return grouped
+
+
+def _style_key(row: JsonDict) -> str | None:
+    pieces = [
+        str(value).strip()
+        for value in (
+            _pick(row, "char_type_resd"),
+            _pick(row, "char_ext_wall"),
+            _pick(row, "char_cnst_qlty"),
+        )
+        if value not in (None, "")
+    ]
+    return "|".join(pieces) if pieces else None
+
+
+def _amenity_count(row: JsonDict) -> int:
+    names = (
+        "char_air",
+        "char_beds",
+        "char_fbath",
+        "char_hbath",
+        "char_frpl",
+        "char_gar1_area",
+        "char_gar1_size",
+        "char_porch",
+        "char_bsmt",
+        "char_bsmt_fin",
+    )
+    return sum(1 for name in names if row.get(name) not in (None, "", "0", 0))

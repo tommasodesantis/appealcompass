@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import date
 
 from appeal_tool.analysis import analyze_comparables, build_evidence_summary
+from appeal_tool.comparable_profiles import BOR_PROFILE, PTAB_PROFILE
 from appeal_tool.models import Comparable, UserEvidence
 from appeal_tool.repository import FixtureRepository
 
@@ -12,6 +13,7 @@ def test_comparable_analysis_known_fixture_is_strong(fixture_repo: FixtureReposi
     case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
     comps = analyze_comparables(case)
     assert comps.status == "ok"
+    assert comps.profile_key == "assessor"
     assert comps.pool_size == 10
     assert comps.percentile is not None
     assert comps.percentile >= 75
@@ -69,6 +71,74 @@ def test_comparable_analysis_rejects_too_few_comps(fixture_repo: FixtureReposito
     analysis = analyze_comparables(sparse_case)
     assert analysis.status == "insufficient_data"
     assert "too few" in analysis.note
+
+
+def test_bor_profile_uses_improvement_assessment_metric(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    parcel = replace(case.parcel, current_av=120000, current_improvement_av=90000)
+    comps = tuple(
+        Comparable(
+            pin=f"0300000003{index:04d}",
+            pin_formatted=f"03-00-000-003-{index:04d}",
+            address=f"{index} BOR ST",
+            building_sqft=1800,
+            year_built=1924,
+            av=140000,
+            improvement_av=60000 + index * 1000,
+            neighborhood="0101",
+            lat=41.9902,
+            lon=-87.6972,
+        )
+        for index in range(5)
+    )
+    bor_case = replace(case, parcel=parcel, comparables=comps, subject_sales=())
+    analysis = analyze_comparables(bor_case, profile=BOR_PROFILE)
+    assert analysis.status == "ok"
+    assert analysis.profile_key == "bor"
+    assert analysis.metric_label == "building assessment"
+    assert analysis.subject_av_per_sqft == 50
+    assert analysis.median_av_per_sqft is not None
+    assert analysis.median_av_per_sqft < analysis.subject_av_per_sqft
+
+
+def test_ptab_profile_can_run_when_strict_grid_fields_exist(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    parcel = replace(
+        case.parcel,
+        current_av=120000,
+        current_improvement_av=90000,
+        land_sqft=4000,
+        style="1 Story|Frame|Average",
+        amenity_count=4,
+    )
+    comps = tuple(
+        Comparable(
+            pin=f"0300000004{index:04d}",
+            pin_formatted=f"03-00-000-004-{index:04d}",
+            address=f"{index} PTAB ST",
+            building_sqft=1760 + index * 10,
+            year_built=1920 + index,
+            av=115000,
+            improvement_av=62000 + index * 1000,
+            land_sqft=3900 + index * 25,
+            style="1 Story|Frame|Average",
+            amenity_count=5,
+            neighborhood="0101",
+            lat=41.9902 + index * 0.0001,
+            lon=-87.6972 - index * 0.0001,
+        )
+        for index in range(4)
+    )
+    ptab_case = replace(case, parcel=parcel, comparables=comps, subject_sales=())
+    analysis = analyze_comparables(ptab_case, profile=PTAB_PROFILE)
+    assert analysis.status == "ok"
+    assert analysis.profile_key == "ptab"
+    assert analysis.pool_size == 4
+    assert len(analysis.exhibit) == 4
 
 
 def test_evidence_summary_supporting_uniformity_is_moderate(
