@@ -1,29 +1,292 @@
 :root {
-  color: #1f2933;
-  background: #f7f8f5;
+  color: #17212b;
+  background: #f6f7f2;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
 }
 
+a {
+  color: #075e54;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+.button-link {
+  min-height: 2.75rem;
+  border: 1px solid #0b5f56;
+  border-radius: 6px;
+  background: #0b5f56;
+  color: #fff;
+  padding: 0.65rem 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+button.secondary {
+  background: #fff;
+  color: #0b5f56;
+}
+
+button.candidate {
+  width: 100%;
+  justify-content: flex-start;
+  margin-top: 0.5rem;
+  background: #fff;
+  color: #17212b;
+  border-color: #ccd3cd;
+  text-align: left;
+}
+
 main {
-  max-width: 48rem;
+  max-width: 70rem;
   margin: 0 auto;
-  padding: 4rem 1.25rem;
+  padding: 2rem 1rem 4rem;
+}
+
+.topline {
+  max-width: 52rem;
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow,
+.step-label {
+  margin: 0 0 0.5rem;
+  color: #6b4f16;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
 }
 
 h1 {
-  margin: 0 0 1rem;
-  font-size: clamp(2rem, 6vw, 3.25rem);
-  line-height: 1.05;
+  margin-bottom: 0.75rem;
+  font-size: clamp(2rem, 5vw, 3.75rem);
+  line-height: 1.02;
   letter-spacing: 0;
 }
 
-p {
+h2 {
+  margin-bottom: 0.75rem;
+  font-size: 1.45rem;
+  letter-spacing: 0;
+}
+
+h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.lede {
+  max-width: 42rem;
+  color: #46525f;
+  font-size: 1.1rem;
+  line-height: 1.55;
+}
+
+.panel,
+.notice,
+.warnings,
+.error,
+.progress {
+  border: 1px solid #d9ded8;
+  border-radius: 8px;
+  background: #fff;
+  padding: 1.1rem;
+  margin: 1rem 0;
+}
+
+.notice {
+  border-color: #b88900;
+  background: #fff8df;
+}
+
+.warnings {
+  border-color: #b88900;
+}
+
+.error {
+  border-color: #b3261e;
+  background: #fff1f0;
+}
+
+.progress {
+  border-color: #87a9a4;
+  color: #0b5f56;
+  font-weight: 700;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.lookup-grid,
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+label span,
+dt {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #46525f;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #b9c1bb;
+  border-radius: 6px;
+  background: #fff;
+  color: #17212b;
+  padding: 0.68rem 0.75rem;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus,
+a:focus {
+  outline: 3px solid #f2c14e;
+  outline-offset: 2px;
+}
+
+summary {
+  cursor: pointer;
+  color: #0b5f56;
+  font-weight: 800;
+}
+
+.evidence-grid,
+.checks {
+  margin-top: 1rem;
+}
+
+.checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.checks label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.checks input {
+  width: auto;
+}
+
+.hint,
+.tagline {
+  color: #56616e;
+  font-size: 0.93rem;
+  line-height: 1.5;
+}
+
+.headline {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
   margin: 0;
-  max-width: 36rem;
-  font-size: 1.125rem;
-  line-height: 1.6;
+}
+
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+ul {
+  padding-left: 1.25rem;
+}
+
+li {
+  margin: 0.35rem 0;
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e1e5e0;
+  padding: 0.6rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: #46525f;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  main {
+    padding-top: 1rem;
+  }
+
+  .lookup-grid,
+  .evidence-grid,
+  .checks,
+  dl {
+    grid-template-columns: 1fr;
+  }
+
+  .actions,
+  button,
+  .button-link {
+    width: 100%;
+  }
 }
