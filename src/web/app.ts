@@ -1,3 +1,5 @@
+import { buildComparableWorkbook, comparableWorkbookFilename } from "./xlsx";
+
 interface ApiError {
   ok: false;
   error: {
@@ -70,6 +72,7 @@ interface CasePayload {
     comparableAnalysis: {
       status: string;
       note: string;
+      profileKey: string;
       profileLabel: string;
       metricLabel: string;
       warnings: string[];
@@ -123,6 +126,7 @@ const QUEUED_MESSAGE =
 const CCAO_EXEMPTIONS_URL = "https://www.cookcountyassessoril.gov/exemptions";
 const COOK_PROPERTY_TAX_PORTAL_URL = "https://www.cookcountypropertyinfo.com/";
 let tooltipCounter = 0;
+let lastCasePayload: CasePayload | null = null;
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -579,6 +583,7 @@ function renderComparables(payload: CasePayload): string {
 }
 
 function renderResults(payload: CasePayload, query: URLSearchParams): void {
+  lastCasePayload = payload;
   const subject = payload.case.parcel;
   const subjectAddress = [subject.address, subject.city, subject.zipCode]
     .filter(Boolean)
@@ -638,7 +643,10 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
       <h2 id="step-five">${escapeHtml(payload.venue.name)} checklist</h2>
       <p class="hint">Use this checklist to assemble documents before filing at the official venue.</p>
       <ul>${payload.venue.checklist.map((item) => `<li>${linkedText(item)}</li>`).join("")}</ul>
-      <a class="button-link" href="/print?${printQuery.toString()}">Print / Save as PDF</a>
+      <div class="actions">
+        <a class="button-link" href="/print?${printQuery.toString()}">Print / Save as PDF</a>
+        <button type="button" id="download-comps" class="secondary">Download comps (.xlsx)</button>
+      </div>
     </section>
 
     ${renderExemptionsSection()}
@@ -648,6 +656,7 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
 }
 
 function clearAssessmentSurfaces(): void {
+  lastCasePayload = null;
   setFormError("");
   for (const selector of ["#results", "#address-results"]) {
     const target = document.querySelector<HTMLElement>(selector);
@@ -738,6 +747,26 @@ function toggleTooltip(button: HTMLButtonElement): void {
   bubble.hidden = !willOpen;
 }
 
+function downloadComparableWorkbook(): void {
+  if (!lastCasePayload) {
+    return;
+  }
+  const workbook = buildComparableWorkbook(lastCasePayload);
+  const workbookBuffer = new ArrayBuffer(workbook.byteLength);
+  new Uint8Array(workbookBuffer).set(workbook);
+  const blob = new Blob([workbookBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = comparableWorkbookFilename(lastCasePayload);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 shell();
 
 const form = document.querySelector<HTMLFormElement>("#case-form");
@@ -780,6 +809,9 @@ document.addEventListener("click", (event) => {
   }
   if (target instanceof HTMLElement && target.id === "clear-evidence") {
     clearEvidenceInputs();
+  }
+  if (target instanceof HTMLElement && target.id === "download-comps") {
+    downloadComparableWorkbook();
   }
 });
 
