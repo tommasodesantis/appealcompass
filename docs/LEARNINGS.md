@@ -101,6 +101,9 @@ code, tests, and user-facing copy.
 
 ## Product Honesty Requirements
 
+- Evidence precedence is documented in `docs/EVIDENCE_PRECEDENCE.md`: positive public values win
+  when present, user values are fallback-only, and user-supplied values remain
+  documentation-required.
 - Show `NOT LEGAL ADVICE. Appeal Compass supports only individual residential homeowners appealing
   their own home. Entity-owned properties, commercial properties, and association properties are
   not supported and generally require an attorney.` in every results view and printable packet.

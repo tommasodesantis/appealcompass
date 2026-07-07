@@ -169,26 +169,6 @@ function addOptionalParams(params: URLSearchParams, form: HTMLFormElement): void
       params.set(name, value);
     }
   }
-  for (const flag of [
-    "ownerOccupied",
-    "age65Plus",
-    "seniorFreezeIncome",
-    "veteranDisabled",
-    "personDisabled",
-    "vacancyClaim",
-    "demolitionClaim",
-  ]) {
-    if ((form.elements.namedItem(flag) as HTMLInputElement | null)?.checked) {
-      params.set(flag, "1");
-    }
-  }
-  const issues = formValue(form, "conditionIssue")
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  for (const issue of issues) {
-    params.append("conditionIssue", issue);
-  }
 }
 
 function progressHtml(message: string): string {
@@ -325,54 +305,35 @@ function shell(): void {
             </label>
             <label>
               <span>Purchase price</span>
-              <input name="purchasePrice" inputmode="decimal">
+              <input name="purchasePrice" inputmode="decimal" data-evidence-input>
             </label>
             <label>
               <span>Purchase date</span>
-              <input name="purchaseDate" type="date">
+              <input name="purchaseDate" type="date" data-evidence-input>
             </label>
             <label>
               <span>Appraisal value</span>
-              <input name="appraisalValue" inputmode="decimal">
+              <input name="appraisalValue" inputmode="decimal" data-evidence-input>
             </label>
             <label>
               <span>Appraisal date</span>
-              <input name="appraisalDate" type="date">
+              <input name="appraisalDate" type="date" data-evidence-input>
             </label>
             <label>
               <span>Actual sqft</span>
-              <input name="actualSqft" inputmode="decimal" aria-describedby="actual-help">
+              <input name="actualSqft" inputmode="decimal" aria-describedby="actual-help" data-evidence-input>
             </label>
             <label>
               <span>Actual total AV</span>
-              <input name="actualAv" inputmode="decimal">
+              <input name="actualAv" inputmode="decimal" data-evidence-input>
             </label>
             <label>
               <span>Actual improvement AV</span>
-              <input name="actualImprovementAv" inputmode="decimal">
+              <input name="actualImprovementAv" inputmode="decimal" data-evidence-input>
             </label>
           </div>
           <p id="actual-help" class="hint">User-supplied values are labeled documentation-required and are used only when official public data is missing.</p>
-          <label>
-            <span>Condition issues</span>
-            <textarea name="conditionIssue" rows="3" placeholder="One issue per line"></textarea>
-          </label>
-          <div class="checks">
-            ${[
-              ["ownerOccupied", "Owner occupied"],
-              ["age65Plus", "Age 65+"],
-              ["seniorFreezeIncome", "Senior Freeze income screen"],
-              ["veteranDisabled", "Disabled veteran"],
-              ["personDisabled", "Person with disability"],
-              ["vacancyClaim", "Vacancy claim"],
-              ["demolitionClaim", "Demolition claim"],
-            ]
-              .map(
-                ([name, label]) =>
-                  `<label><input type="checkbox" name="${name}"><span>${label}</span></label>`,
-              )
-              .join("")}
-          </div>
+          <button type="button" id="clear-evidence" class="secondary">Clear evidence</button>
         </details>
 
         <div class="actions">
@@ -607,10 +568,22 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
   `;
 }
 
+function clearAssessmentSurfaces(): void {
+  setFormError("");
+  for (const selector of ["#results", "#address-results"]) {
+    const target = document.querySelector<HTMLElement>(selector);
+    if (target) {
+      target.innerHTML = "";
+    }
+  }
+}
+
 async function loadCase(params: URLSearchParams): Promise<void> {
+  clearAssessmentSurfaces();
   const stop = startProgress();
   try {
     const payload = await fetchJson<CasePayload>(`/api/case?${params.toString()}`);
+    clearAssessmentSurfaces();
     renderResults(payload, params);
   } catch (error) {
     const target = document.querySelector<HTMLElement>("#results");
@@ -646,6 +619,18 @@ async function submitCase(form: HTMLFormElement): Promise<void> {
   }
 }
 
+function clearEvidenceInputs(): void {
+  const evidence = document.querySelector<HTMLElement>("details.evidence");
+  if (!evidence) {
+    return;
+  }
+  for (const element of Array.from(evidence.querySelectorAll("[data-evidence-input]"))) {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      element.value = "";
+    }
+  }
+}
+
 shell();
 
 const form = document.querySelector<HTMLFormElement>("#case-form");
@@ -673,6 +658,13 @@ document.addEventListener("change", (event) => {
       setFormError("");
       updateConditionalFields(activeForm);
     }
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement && target.id === "clear-evidence") {
+    clearEvidenceInputs();
   }
 });
 

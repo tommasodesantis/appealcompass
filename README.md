@@ -10,8 +10,9 @@ the browser.
 ## What It Does
 
 - Looks up a residential parcel by PIN.
-- Screens public data for uniformity, sale/appraisal, factual-error, condition, and assessment-shock
-  evidence.
+- Screens public data for uniformity, sale/appraisal, factual-error, and assessment-shock evidence.
+- Notes other possible appeal factors the homeowner may document directly, such as condition,
+  vacancy, demolition, and exemption-related statuses.
 - Routes the case to the Cook County Assessor, Cook County Board of Review, Illinois PTAB, or a
   closed-window preparation path.
 - Shows deadlines, days remaining, official-source links, warning messages, comparable evidence,

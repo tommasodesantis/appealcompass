@@ -37,7 +37,7 @@ const checks = [
   {
     label: "missing sqft",
     path: `/api/case?demo=1&pin=03-00-000-000-0030&venue=bor&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"status\":\"insufficient_data\"", "--actual-sqft"],
+    expect: ["\"status\":\"insufficient_data\"", "Actual sqft field"],
   },
   {
     label: "unknown township closed",

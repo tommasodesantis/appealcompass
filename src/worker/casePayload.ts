@@ -48,10 +48,6 @@ function positiveNumber(params: URLSearchParams, name: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function booleanFlag(params: URLSearchParams, name: string): boolean {
-  return params.get(name) === "1" || params.get(name) === "true";
-}
-
 function requiredChoice<T extends string>(
   params: URLSearchParams,
   name: string,
@@ -122,15 +118,7 @@ function userEvidenceFromParams(params: URLSearchParams): UserEvidence {
     purchaseDate: params.get("purchaseDate"),
     appraisalValue: positiveNumber(params, "appraisalValue"),
     appraisalDate: params.get("appraisalDate"),
-    conditionIssues: params.getAll("conditionIssue").filter(Boolean),
     ownershipType,
-    ownerOccupied: booleanFlag(params, "ownerOccupied") ? true : null,
-    age65Plus: booleanFlag(params, "age65Plus") ? true : null,
-    householdIncomeBelow65k: booleanFlag(params, "seniorFreezeIncome") ? true : null,
-    veteranDisabled: booleanFlag(params, "veteranDisabled") ? true : null,
-    personDisabled: booleanFlag(params, "personDisabled") ? true : null,
-    vacancyClaim: booleanFlag(params, "vacancyClaim"),
-    demolitionClaim: booleanFlag(params, "demolitionClaim"),
     assessorAppealFiled,
     assessorDecisionReceived,
     borAppealFiled,

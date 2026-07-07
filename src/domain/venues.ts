@@ -14,6 +14,9 @@ import type {
   RouteResult,
 } from "./models";
 
+const OTHER_POSSIBLE_FACTORS =
+  "Other possible appeal factors: condition issues, vacancy, demolition, and exemption-related statuses such as senior, disability, or veteran status can be raised directly with the venue when you have documentation.";
+
 export interface VenueAdapter {
   venueKey: ResolvedVenue;
   venueName: string;
@@ -33,6 +36,7 @@ class AssessorAdapter implements VenueAdapter {
       "Attach comparable, sale, appraisal, condition, and factual-error evidence.",
       "If filing later at BOR, save the Assessor appeal confirmation and documents.",
       "For prior-year factual errors or missed exemptions, ask about Certificate of Error.",
+      OTHER_POSSIBLE_FACTORS,
     ];
     if (caseFile.userEvidence.actualSqft) {
       items.push(
@@ -72,6 +76,7 @@ class BoardOfReviewAdapter implements VenueAdapter {
       "[Rule 15] If you filed at the Assessor, attach Assessor appeal documents.",
       "[Rule 16] Sign and complete the complaint truthfully.",
       "[Rule 26] Re-review requests must be made promptly after the BOR decision letter.",
+      OTHER_POSSIBLE_FACTORS,
     ];
     const purchaseDate = caseFile.userEvidence.purchaseDate;
     if (purchaseDate && isWithinYearsOf(purchaseDate, `${ASSESSMENT_YEAR}-01-01`, 3)) {
@@ -81,12 +86,6 @@ class BoardOfReviewAdapter implements VenueAdapter {
     }
     if (caseFile.userEvidence.appraisalValue) {
       items.push("[Rule 19] Appraisal evidence must include required property photos and PINs.");
-    }
-    if (caseFile.userEvidence.vacancyClaim) {
-      items.push("[Rule 21] Vacancy claims require the BOR vacancy affidavit and proof.");
-    }
-    if (caseFile.userEvidence.demolitionClaim) {
-      items.push("[Rule 22] Demolition claims require permits and before/after photos.");
     }
     return items;
   }
@@ -120,6 +119,7 @@ class PtabAdapter implements VenueAdapter {
       "Taxes must be paid while PTAB is pending; refunds may follow if the appeal succeeds.",
       "PTAB can take a long time. Keep copies of all filings and notices.",
       "The board of review and taxing bodies may intervene.",
+      OTHER_POSSIBLE_FACTORS,
       `PTAB e-filing/source: ${PTAB_EFILE_URL}`,
     ];
   }
@@ -161,6 +161,7 @@ class ClosedSessionAdapter implements VenueAdapter {
       "If you already received a BOR decision, answer the Step 1 BOR-decision question and enter the decision date so Appeal Compass can compute the PTAB deadline.",
       "For prior-year factual errors or missed exemptions, ask about Certificate of Error.",
       "Check exemptions now; exemptions may be worth more than an assessment appeal.",
+      OTHER_POSSIBLE_FACTORS,
     ];
   }
 

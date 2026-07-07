@@ -82,7 +82,7 @@ test("missing characteristics degrade without crashing", () => {
   const caseFile = loadFixtureCase("03000000000030");
   const comps = analyzeComparables(caseFile);
   expect(comps.status).toBe("insufficient_data");
-  expect(comps.note).toContain("--actual-sqft");
+  expect(comps.note).toContain("Actual sqft field");
 });
 
 test("missing sqft with user override completes and labels source", () => {
@@ -100,12 +100,63 @@ test("missing sqft with user override completes and labels source", () => {
   expect(overrideCase.parcel.buildingSqft).toBeNull();
 });
 
+test("public sqft wins over user sqft and conflicting user sqft creates description argument", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const overrideCase = withUserEvidence(caseFile, defaultUserEvidence({ actualSqft: 900 }));
+  const analysis = analyzeComparables(overrideCase);
+  expect(analysis.status).toBe("ok");
+  expect(analysis.subjectAvPerSqft).toBe(
+    (overrideCase.parcel.currentAv ?? 0) / (overrideCase.parcel.buildingSqft ?? 1),
+  );
+  const evidence = buildEvidenceSummary(overrideCase, 0.1);
+  expect(
+    evidence.arguments.some((argument) => argument.argumentType === "property_description"),
+  ).toBe(true);
+});
+
+test("non-positive public sqft is treated as missing and user sqft is labeled fallback", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const overrideCase = {
+    ...withUserEvidence(caseFile, defaultUserEvidence({ actualSqft: 1800 })),
+    parcel: { ...caseFile.parcel, buildingSqft: 0 },
+    subjectSales: [],
+  };
+  const analysis = analyzeComparables(overrideCase);
+  expect(analysis.status).toBe("ok");
+  expect(analysis.warnings.some((warning) => warning.includes("user-supplied building sqft"))).toBe(
+    true,
+  );
+});
+
+test("public total AV wins over user total AV", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const evidence = buildEvidenceSummary(
+    withUserEvidence(caseFile, defaultUserEvidence({ actualAv: 1000 })),
+    0.1,
+  );
+  expect(evidence.impliedMarketValue).toBe((caseFile.parcel.currentAv ?? 0) / 0.1);
+});
+
+test("user total AV is fallback-only when public total AV is missing", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const overrideCase = {
+    ...withUserEvidence(caseFile, defaultUserEvidence({ actualAv: 50000 })),
+    parcel: { ...caseFile.parcel, currentAv: null },
+  };
+  const evidence = buildEvidenceSummary(overrideCase, 0.1);
+  expect(evidence.impliedMarketValue).toBe(500000);
+  const analysis = analyzeComparables(overrideCase);
+  expect(analysis.warnings.some((warning) => warning.includes("user-supplied current total"))).toBe(
+    true,
+  );
+});
+
 test("missing total AV guidance names actual AV flag", () => {
   const caseFile = loadFixtureCase("03000000000001");
   const missingAvCase = { ...caseFile, parcel: { ...caseFile.parcel, currentAv: null } };
   const analysis = analyzeComparables(missingAvCase);
   expect(analysis.status).toBe("insufficient_data");
-  expect(analysis.note).toContain("--actual-av");
+  expect(analysis.note).toContain("Actual total AV field");
 });
 
 test("BOR missing improvement AV guidance names improvement flag", () => {
@@ -116,7 +167,7 @@ test("BOR missing improvement AV guidance names improvement flag", () => {
   const missingImprovementCase = { ...caseFile, comparables: comps };
   const analysis = analyzeComparables(missingImprovementCase, 10, BOR_PROFILE);
   expect(analysis.status).toBe("insufficient_data");
-  expect(analysis.note).toContain("--actual-improvement-av");
+  expect(analysis.note).toContain("Actual improvement AV field");
 });
 
 test("BOR user improvement AV override completes without mutating official record", () => {
@@ -135,6 +186,21 @@ test("BOR user improvement AV override completes without mutating official recor
     analysis.warnings.some((warning) => warning.includes("user-supplied building/improvement")),
   ).toBe(true);
   expect(overrideCase.parcel.currentImprovementAv).toBeNull();
+});
+
+test("public improvement AV wins over user improvement AV", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const comps = caseFile.comparables
+    .filter((comp) => comp.av !== null)
+    .map((comp) => ({ ...comp, improvementAv: comp.av }));
+  const overrideCase = {
+    ...withUserEvidence(caseFile, defaultUserEvidence({ actualImprovementAv: 1000 })),
+    parcel: { ...caseFile.parcel, currentImprovementAv: 90000 },
+    comparables: comps,
+  };
+  const analysis = analyzeComparables(overrideCase, 10, BOR_PROFILE);
+  expect(analysis.status).toBe("ok");
+  expect(analysis.subjectAvPerSqft).toBe(90000 / (caseFile.parcel.buildingSqft ?? 1));
 });
 
 test("evidence summary has honest strong tier", () => {
@@ -276,7 +342,6 @@ test("evidence summary user evidence paths", () => {
         appraisalValue: 420000,
         appraisalDate: "2024-08-01",
         actualSqft: 1600,
-        conditionIssues: ["basement water damage"],
       }),
     ),
     subjectSales: [],
@@ -284,10 +349,36 @@ test("evidence summary user evidence paths", () => {
   const evidence = buildEvidenceSummary(evidenceCase, 0.1);
   const argumentTypes = new Set(evidence.arguments.map((argument) => argument.argumentType));
   expect([...argumentTypes]).toEqual(
-    expect.arrayContaining(["overvaluation", "property_description", "condition"]),
+    expect.arrayContaining(["overvaluation", "property_description"]),
   );
   expect(evidence.arguments.some((argument) => argument.text.includes("reported appraisal"))).toBe(
     true,
+  );
+});
+
+test("recorded sale drives overvaluation when no user value evidence is supplied", () => {
+  const caseFile = {
+    ...loadFixtureCase("03000000000001"),
+    subjectSales: [{ saleDate: "2025-01-01", salePrice: 300000, source: "recorded sale" }],
+  };
+  const evidence = buildEvidenceSummary(caseFile, 0.1);
+  expect(evidence.arguments.some((argument) => argument.text.includes("recorded sale"))).toBe(true);
+});
+
+test("user purchase supersedes recorded sale as value evidence", () => {
+  const caseFile = {
+    ...withUserEvidence(
+      loadFixtureCase("03000000000001"),
+      defaultUserEvidence({ purchasePrice: 400000, purchaseDate: "2025-02-01" }),
+    ),
+    subjectSales: [{ saleDate: "2025-01-01", salePrice: 300000, source: "recorded sale" }],
+  };
+  const evidence = buildEvidenceSummary(caseFile, 0.1);
+  expect(evidence.arguments.some((argument) => argument.text.includes("reported purchase"))).toBe(
+    true,
+  );
+  expect(evidence.arguments.some((argument) => argument.text.includes("recorded sale"))).toBe(
+    false,
   );
 });
 

@@ -65,15 +65,7 @@ export interface UserEvidence {
   purchaseDate: string | null;
   appraisalValue: number | null;
   appraisalDate: string | null;
-  conditionIssues: string[];
   ownershipType: "individual" | "llc" | "corporation" | "other";
-  ownerOccupied: boolean | null;
-  age65Plus: boolean | null;
-  householdIncomeBelow65k: boolean | null;
-  veteranDisabled: boolean | null;
-  personDisabled: boolean | null;
-  vacancyClaim: boolean;
-  demolitionClaim: boolean;
   assessorAppealFiled: boolean | null;
   assessorDecisionReceived: boolean | null;
   borAppealFiled: boolean | null;
@@ -165,15 +157,7 @@ export function defaultUserEvidence(overrides: Partial<UserEvidence> = {}): User
     purchaseDate: null,
     appraisalValue: null,
     appraisalDate: null,
-    conditionIssues: [],
     ownershipType: "individual",
-    ownerOccupied: null,
-    age65Plus: null,
-    householdIncomeBelow65k: null,
-    veteranDisabled: null,
-    personDisabled: null,
-    vacancyClaim: false,
-    demolitionClaim: false,
     assessorAppealFiled: null,
     assessorDecisionReceived: null,
     borAppealFiled: null,

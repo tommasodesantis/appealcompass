@@ -34,11 +34,17 @@ function distanceKm(
   return 2 * radius * Math.asin(Math.sqrt(a));
 }
 
+function positive(value: number | null): number | null {
+  return value !== null && value > 0 ? value : null;
+}
+
 function similarity(subject: CaseFile, comp: Comparable): number {
   const parcel = subject.parcel;
+  const parcelSqft = positive(parcel.buildingSqft);
+  const compSqft = positive(comp.buildingSqft);
   let score = 0;
-  if (parcel.buildingSqft && comp.buildingSqft) {
-    score += (0.5 * Math.abs(comp.buildingSqft - parcel.buildingSqft)) / parcel.buildingSqft;
+  if (parcelSqft !== null && compSqft !== null) {
+    score += (0.5 * Math.abs(compSqft - parcelSqft)) / parcelSqft;
   } else {
     score += 0.5;
   }
@@ -60,40 +66,43 @@ function subjectMetricValue(parcel: Parcel, profile: ComparableProfile): number 
 }
 
 function effectiveSqft(caseFile: CaseFile): number | null {
-  return caseFile.parcel.buildingSqft || caseFile.userEvidence.actualSqft;
+  return positive(caseFile.parcel.buildingSqft) ?? positive(caseFile.userEvidence.actualSqft);
 }
 
 function effectiveTotalAv(caseFile: CaseFile): number | null {
-  return caseFile.parcel.currentAv || caseFile.userEvidence.actualAv;
+  return positive(caseFile.parcel.currentAv) ?? positive(caseFile.userEvidence.actualAv);
 }
 
 function effectiveMetricValue(caseFile: CaseFile, profile: ComparableProfile): number | null {
-  const official = subjectMetricValue(caseFile.parcel, profile);
-  if (official) {
+  const official = positive(subjectMetricValue(caseFile.parcel, profile));
+  if (official !== null) {
     return official;
   }
   if (profile.metric === "improvement_av") {
-    return caseFile.userEvidence.actualImprovementAv;
+    return positive(caseFile.userEvidence.actualImprovementAv);
   }
-  return caseFile.userEvidence.actualAv;
+  return positive(caseFile.userEvidence.actualAv);
 }
 
 function userSuppliedWarnings(caseFile: CaseFile, profile: ComparableProfile): string[] {
   const warnings: string[] = [];
-  if (caseFile.parcel.buildingSqft === null && caseFile.userEvidence.actualSqft) {
+  if (
+    positive(caseFile.parcel.buildingSqft) === null &&
+    positive(caseFile.userEvidence.actualSqft)
+  ) {
     warnings.push(
       "Using user-supplied building sqft for comparable analysis; document it with a property record card, appraisal, plans, or other reliable source.",
     );
   }
-  if (caseFile.parcel.currentAv === null && caseFile.userEvidence.actualAv) {
+  if (positive(caseFile.parcel.currentAv) === null && positive(caseFile.userEvidence.actualAv)) {
     warnings.push(
       "Using user-supplied current total assessed value for analysis; attach official assessment documentation.",
     );
   }
   if (
     profile.metric === "improvement_av" &&
-    caseFile.parcel.currentImprovementAv === null &&
-    caseFile.userEvidence.actualImprovementAv
+    positive(caseFile.parcel.currentImprovementAv) === null &&
+    positive(caseFile.userEvidence.actualImprovementAv)
   ) {
     warnings.push(
       "Using user-supplied building/improvement assessment for comparable analysis; document it with the property record card or official assessment notice.",
@@ -105,14 +114,14 @@ function userSuppliedWarnings(caseFile: CaseFile, profile: ComparableProfile): s
 function missingSubjectFlags(caseFile: CaseFile, profile: ComparableProfile): string[] {
   const flags: string[] = [];
   if (!effectiveSqft(caseFile)) {
-    flags.push("--actual-sqft");
+    flags.push("the Actual sqft field");
   }
   if (profile.metric === "improvement_av") {
     if (!effectiveMetricValue(caseFile, profile)) {
-      flags.push("--actual-improvement-av");
+      flags.push("the Actual improvement AV field");
     }
   } else if (!effectiveMetricValue(caseFile, profile)) {
-    flags.push("--actual-av");
+    flags.push("the Actual total AV field");
   }
   return flags;
 }
@@ -206,8 +215,9 @@ function passesProfileRequirements(
 function targetTotalAv(caseFile: CaseFile, profile: ComparableProfile, targetMetricValue: number) {
   const currentTotal = effectiveTotalAv(caseFile);
   const currentImprovement =
-    caseFile.parcel.currentImprovementAv || caseFile.userEvidence.actualImprovementAv;
-  if (profile.metric === "improvement_av" && currentImprovement && currentTotal) {
+    positive(caseFile.parcel.currentImprovementAv) ??
+    positive(caseFile.userEvidence.actualImprovementAv);
+  if (profile.metric === "improvement_av" && currentImprovement !== null && currentTotal !== null) {
     const reduction = Math.max(0, currentImprovement - targetMetricValue);
     return Math.max(0, currentTotal - reduction);
   }
@@ -283,10 +293,10 @@ export function analyzeComparables(
   const subjectPsf = safeDiv(subjectMetric, subjectSqft);
   if (subjectPsf === null || subjectSqft === null || subjectSqft <= 0) {
     const flags = missingSubjectFlags(caseFile, profile);
-    const flagText = flags.length > 0 ? flags.join(" ") : "documented subject-data override flags";
+    const fieldText = flags.length > 0 ? flags.join(" and ") : "the documented override fields";
     return profiledAnalysis({
       status: "insufficient_data",
-      note: `Missing subject building square footage or ${profile.metricLabel}. Re-run with ${flagText} if you can document the missing value.`,
+      note: `Missing subject building square footage or ${profile.metricLabel}. Use ${fieldText} if you can document the missing value.`,
       profile,
       warnings,
       missingDataRate,
@@ -404,7 +414,7 @@ export function buildEvidenceSummary(
   const profile = profileForVenue(venue);
   const comparableAnalysis = analyzeComparables(caseFile, 10, profile);
   const currentTotalAv = effectiveTotalAv(caseFile);
-  const impliedMarket = currentTotalAv ? currentTotalAv / ASSESSMENT_LEVEL : null;
+  const impliedMarket = currentTotalAv !== null ? currentTotalAv / ASSESSMENT_LEVEL : null;
   const args: EvidenceArgument[] = [];
   let tierPoints = 0;
 
@@ -482,16 +492,18 @@ export function buildEvidenceSummary(
     });
   }
 
-  if (caseFile.userEvidence.actualSqft && parcel.buildingSqft) {
-    const sqftDelta = parcel.buildingSqft - caseFile.userEvidence.actualSqft;
-    if (Math.abs(sqftDelta) / parcel.buildingSqft >= 0.05) {
+  const publicSqft = positive(parcel.buildingSqft);
+  const userSqft = positive(caseFile.userEvidence.actualSqft);
+  if (userSqft !== null && publicSqft !== null) {
+    const sqftDelta = publicSqft - userSqft;
+    if (Math.abs(sqftDelta) / publicSqft >= 0.05) {
       tierPoints += 2;
       args.push({
         argumentType: "property_description",
         strength: "strong",
-        text: `The Assessor record shows ${parcel.buildingSqft.toLocaleString(
+        text: `The Assessor record shows ${publicSqft.toLocaleString(
           "en-US",
-        )} sqft, but you reported ${caseFile.userEvidence.actualSqft.toLocaleString(
+        )} sqft, but you reported ${userSqft.toLocaleString(
           "en-US",
         )} sqft. A documented factual correction is strongest at the Assessor level.`,
         targetAv: null,
@@ -507,18 +519,6 @@ export function buildEvidenceSummary(
       argumentType: "assessment_shock",
       strength: "supporting",
       text: `Current assessed value increased ${shock.toFixed(0)}% from the prior final value.`,
-      targetAv: null,
-      estimatedSavings: null,
-    });
-  }
-
-  if (caseFile.userEvidence.conditionIssues.length > 0) {
-    args.push({
-      argumentType: "condition",
-      strength: "supporting",
-      text: `Reported condition issues: ${caseFile.userEvidence.conditionIssues.join(
-        "; ",
-      )}. Attach dated photos and repair estimates.`,
       targetAv: null,
       estimatedSavings: null,
     });
