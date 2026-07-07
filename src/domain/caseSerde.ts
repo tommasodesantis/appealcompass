@@ -11,26 +11,26 @@ import type {
 
 type JsonRecord = Record<string, JsonValue>;
 
-function record(value: JsonValue | undefined): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+function record(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
 }
 
-function array(value: JsonValue | undefined): JsonValue[] {
+function array(value: unknown): JsonValue[] {
   return Array.isArray(value) ? value : [];
 }
 
-function stringValue(value: JsonValue | undefined): string {
+function stringValue(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-function nullableString(value: JsonValue | undefined): string | null {
+function nullableString(value: unknown): string | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
   return String(value);
 }
 
-export function numberValue(value: JsonValue | undefined): number | null {
+export function numberValue(value: unknown): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -38,7 +38,7 @@ export function numberValue(value: JsonValue | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function intValue(value: JsonValue | undefined): number | null {
+function intValue(value: unknown): number | null {
   const parsed = numberValue(value);
   return parsed === null ? null : Math.trunc(parsed);
 }
@@ -90,7 +90,7 @@ export function comparableFromJson(raw: JsonRecord): Comparable {
 }
 
 export function caseFileFromJson(rawInput: unknown): CaseFile {
-  const raw = record(rawInput as JsonValue);
+  const raw = record(rawInput);
   const parcel = parcelFromJson(record(raw.parcel));
   const assessmentHistory: AssessmentHistoryRow[] = array(raw.assessment_history).map((item) => {
     const row = record(item);
