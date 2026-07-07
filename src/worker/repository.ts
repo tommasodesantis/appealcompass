@@ -27,15 +27,10 @@ const PARCEL_SELECT = [
   "township_name",
   "township_code",
   "nbhd_code",
-  "nbhd",
-  "town_nbhd",
   "lat",
-  "latitude",
   "lon",
-  "longitude",
   "year",
-  "tax_year",
-  "prop_address_zipcode_1",
+  "zip_code",
 ].join(",");
 
 const RES_SELECT = [
@@ -43,13 +38,9 @@ const RES_SELECT = [
   "class",
   "township_code",
   "year",
-  "tax_year",
   "char_bldg_sf",
-  "bldg_sf",
   "char_land_sf",
-  "land_sf",
   "char_yrblt",
-  "yrblt",
   "char_type_resd",
   "char_ext_wall",
   "char_cnst_qlty",
@@ -63,13 +54,11 @@ const RES_SELECT = [
   "char_porch",
   "char_bsmt",
   "char_bsmt_fin",
-  "nbhd",
 ].join(",");
 
 const AV_SELECT = [
   "pin",
   "year",
-  "tax_year",
   "mailed_tot",
   "certified_tot",
   "board_tot",
@@ -330,7 +319,7 @@ export class SocrataRepository implements CaseRepository {
       townshipName: stringValue(pick(universe, "township_name")),
       address: "",
       city: "",
-      zipCode: stringValue(pick(universe, "prop_address_zipcode_1")),
+      zipCode: stringValue(pick(universe, "zip_code", "prop_address_zipcode_1")),
       neighborhood: nullableString(pick(universe, "nbhd_code", "nbhd", "town_nbhd")),
       townshipCode: nullableString(pick(universe, "township_code")),
       buildingSqft: numberValue(pick(char, "char_bldg_sf", "bldg_sf")),

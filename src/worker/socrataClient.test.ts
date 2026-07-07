@@ -1,6 +1,7 @@
 import { DataAccessError, DataErrorKind } from "../domain/errors";
 import { type CacheStore, MemoryCacheStore } from "./cache";
 import { SocrataClient } from "./socrataClient";
+import { friendlyDataError } from "./socrataClient";
 
 function jsonResponse(payload: unknown, init: ResponseInit = {}): Response {
   return Response.json(payload, init);
@@ -144,4 +145,17 @@ test("SocrataClient exposes transient failure kind after retries", async () => {
   await expect(client.fetchAll("parcel_universe", { $where: "pin='y'" })).rejects.toMatchObject({
     kind: DataErrorKind.TransientHttp,
   });
+});
+
+test.each([
+  [DataErrorKind.TransientHttp, "busy"],
+  [DataErrorKind.Network, "busy"],
+  [DataErrorKind.UnknownDataset, "configuration"],
+  [DataErrorKind.InvalidJson, "could not use"],
+  [DataErrorKind.HttpError, "could not use"],
+  [DataErrorKind.InvalidCache, "could not use"],
+])("friendlyDataError maps %s to actionable copy", (kind, expected) => {
+  const message = friendlyDataError(new DataAccessError("raw upstream detail", kind)).message;
+  expect(message).toContain(expected);
+  expect(message).not.toContain("raw upstream detail");
 });

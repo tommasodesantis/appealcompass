@@ -86,7 +86,7 @@ export class SocrataClient {
 
   constructor(private readonly options: SocrataClientOptions = {}) {
     this.cache = options.cache ?? sharedMemoryCache;
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? ((input, init) => fetch(input, init));
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxRetries = options.maxRetries ?? 3;
@@ -195,7 +195,7 @@ export class SocrataClient {
         if (this.options.appToken) {
           headers.set("X-App-Token", this.options.appToken);
         }
-        const response = await this.fetcher(url, { headers, signal: controller.signal });
+        const response = await this.fetcher(url.toString(), { headers, signal: controller.signal });
         if (TRANSIENT_STATUSES.has(response.status)) {
           const delay = retryAfterMs(response) ?? 500 * 2 ** attempt + this.random() * 250;
           lastError = new DataAccessError(

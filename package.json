@@ -9,6 +9,7 @@
     "dev": "wrangler dev",
     "format": "biome check --write src public docs package.json tsconfig.json vitest.config.ts wrangler.jsonc biome.json",
     "lint": "biome check src public docs package.json tsconfig.json vitest.config.ts wrangler.jsonc biome.json",
+    "smoke:fixtures": "node scripts/smoke-fixtures.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "verify": "npm run build && npm run lint && npm run typecheck && npm test"
