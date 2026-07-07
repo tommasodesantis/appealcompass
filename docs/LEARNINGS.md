@@ -1,4 +1,4 @@
-# Cook Property Tax Development Learnings
+# Appeal Compass Development Learnings
 
 This document preserves the durable findings from the Python CLI development cycle before the
 repository was refactored into a Cloudflare Worker webapp. The webapp keeps these constraints in

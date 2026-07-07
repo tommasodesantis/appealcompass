@@ -1,6 +1,6 @@
-# Cook County Property Tax Appeal Assistant
+# Appeal Compass
 
-A minimalist Cloudflare Worker webapp for screening Cook County, Illinois residential parcels for
+Appeal Compass is a minimalist webapp for screening Cook County, Illinois residential parcels for
 property-tax appeal evidence.
 
 It loads public county data server-side, routes a homeowner through the Assessor -> Board of Review
@@ -121,3 +121,7 @@ This repository is deploy-ready but this project does not deploy automatically.
    ```
 
 The browser talks only to the Worker API; the Socrata token is never sent client-side.
+
+## License
+
+Appeal Compass is open source under GPLv3. See [LICENSE](LICENSE).

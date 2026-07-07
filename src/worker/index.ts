@@ -58,7 +58,7 @@ export default {
     if (url.pathname === "/api/health") {
       return json({
         ok: true,
-        service: "cookpropertytax",
+        service: "Appeal Compass",
       });
     }
 
@@ -97,7 +97,7 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
-    return new Response("cookpropertytax", {
+    return new Response("Appeal Compass", {
       headers: { "content-type": "text/plain;charset=utf-8" },
     });
   },
