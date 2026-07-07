@@ -13,6 +13,15 @@ test("health endpoint returns a JSON status", async () => {
   });
 });
 
+test("app shell omits analytics and Turnstile scripts while public tokens are empty", async () => {
+  const response = await worker.fetch(new Request("http://example.test/"), {});
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(html).toContain("Appeal Compass");
+  expect(html).not.toContain("static.cloudflareinsights.com/beacon.min.js");
+  expect(html).not.toContain("challenges.cloudflare.com/turnstile/v0/api.js");
+});
+
 test("fixture-mode case endpoint returns a computed case payload", async () => {
   const response = await worker.fetch(
     new Request(
@@ -131,6 +140,108 @@ test("case endpoint rejects unsupported jurisdictions", async () => {
 test("public demo endpoint is removed", async () => {
   const response = await worker.fetch(new Request("http://example.test/api/demo"), {});
   expect(response.status).toBe(404);
+});
+
+function reportRequest(ip: string, body: Record<string, unknown>): Request {
+  return new Request("http://example.test/api/report", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "cf-connecting-ip": ip,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+test("report endpoint verifies Turnstile and creates sanitized GitHub issue", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("turnstile")) {
+      return Response.json({ success: true });
+    }
+    if (url.includes("api.github.com")) {
+      const body = String(init?.body ?? "");
+      expect(body).not.toContain("<b>");
+      expect(body).not.toContain("turnstile-token");
+      expect(body).toContain("Wrong deadline");
+      return Response.json(
+        { html_url: "https://github.com/tommasodesantis/appealcompass/issues/1" },
+        { status: 201 },
+      );
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      reportRequest("10.0.0.1", {
+        category: "wrong_deadline",
+        description: "<b>Deadline is wrong</b>",
+        context: "PIN 03-00-000-000-0001",
+        turnstileToken: "turnstile-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", GITHUB_ISSUES_TOKEN: "github-secret" },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      issueUrl: "https://github.com/tommasodesantis/appealcompass/issues/1",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("report endpoint rejects failed Turnstile verification", async () => {
+  const fetchMock = vi.fn(async () => Response.json({ success: false }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      reportRequest("10.0.0.2", {
+        category: "wrong_comparables",
+        description: "Comps look wrong",
+        turnstileToken: "bad-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", GITHUB_ISSUES_TOKEN: "github-secret" },
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "turnstile" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("report endpoint returns friendly error when GitHub issue creation fails", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("turnstile")) {
+      return Response.json({ success: true });
+    }
+    return Response.json({ message: "server error" }, { status: 500 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      reportRequest("10.0.0.3", {
+        category: "feature_request",
+        description: "Please add a feature",
+        turnstileToken: "ok-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", GITHUB_ISSUES_TOKEN: "github-secret" },
+    );
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "github" },
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 function caseRequest(index = 0): Request {

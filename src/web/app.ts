@@ -1,3 +1,4 @@
+import { TURNSTILE_SITE_KEY } from "../domain/publicConfig";
 import { buildComparableWorkbook, comparableWorkbookFilename } from "./xlsx";
 
 interface ApiError {
@@ -17,6 +18,7 @@ interface QueueStatus {
 interface CasePayload {
   ok: true;
   demo: boolean;
+  generatedAt: string;
   today: string;
   case: {
     parcel: {
@@ -125,6 +127,7 @@ const QUEUED_MESSAGE =
   "Appeal Compass is busy helping other homeowners right now. You're in line — keep this page open and your assessment will start automatically.";
 const CCAO_EXEMPTIONS_URL = "https://www.cookcountyassessoril.gov/exemptions";
 const COOK_PROPERTY_TAX_PORTAL_URL = "https://www.cookcountypropertyinfo.com/";
+const REPORTING_ENABLED = TURNSTILE_SITE_KEY.length > 0;
 let tooltipCounter = 0;
 let lastCasePayload: CasePayload | null = null;
 
@@ -232,7 +235,45 @@ function siteFooter(): string {
     <p>Appeal Compass is an open-source project developed by <a href="https://github.com/tommasodesantis" target="_blank" rel="noreferrer">Tommaso De Santis<span class="sr-only"> (opens in new tab)</span></a> under GPLv3.</p>
     <a class="footer-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${githubLogo()}<span>View on GitHub</span><span class="sr-only"> (opens in new tab)</span></a>
     <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Donations help the project grow and cover hosting and maintenance costs.<span class="sr-only"> (opens in new tab)</span></a>
+    <button type="button" id="report-problem" class="link-button">Report a problem</button>
   </footer>`;
+}
+
+function reportPanel(): string {
+  const disabled = REPORTING_ENABLED ? "" : " disabled";
+  const turnstile = REPORTING_ENABLED
+    ? `<div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}"></div>`
+    : '<p class="hint">Problem reporting is disabled until the Turnstile site key is configured.</p>';
+  return `<section id="report-panel" class="report-panel" hidden>
+    <div class="report-card" role="dialog" aria-modal="true" aria-labelledby="report-title">
+      <button type="button" id="close-report" class="secondary close-button">Close</button>
+      <h2 id="report-title">Report a problem</h2>
+      <form id="report-form" class="stack">
+        <label>
+          <span>Category</span>
+          <select name="category" required${disabled}>
+            <option value="">Choose a category</option>
+            <option value="wrong_deadline">Wrong deadline</option>
+            <option value="wrong_jurisdiction">Wrong jurisdiction info</option>
+            <option value="wrong_comparables">Wrong comparables</option>
+            <option value="wrong_assessment_data">Wrong assessment data</option>
+            <option value="feature_request">Feature request</option>
+          </select>
+        </label>
+        <label>
+          <span>Description</span>
+          <textarea name="description" rows="5" maxlength="4000" required${disabled}></textarea>
+        </label>
+        <label>
+          <span>Optional PIN/context</span>
+          <input name="context" id="report-context" maxlength="2000"${disabled}>
+        </label>
+        ${turnstile}
+        <div id="report-status" aria-live="polite"></div>
+        <button type="submit"${disabled}>Submit report</button>
+      </form>
+    </div>
+  </section>`;
 }
 
 function startProgress(initialMessage: string | null = null): () => void {
@@ -402,6 +443,7 @@ function shell(): void {
     <div id="progress"></div>
     <div id="results"></div>
     ${siteFooter()}
+    ${reportPanel()}
   `;
 }
 
@@ -413,6 +455,43 @@ function setFormError(message: string): void {
   target.innerHTML = message
     ? `<section class="error inline-error" role="alert">${escapeHtml(message)}</section>`
     : "";
+}
+
+function setReportStatus(message: string, error = false): void {
+  const target = document.querySelector<HTMLElement>("#report-status");
+  if (!target) {
+    return;
+  }
+  target.innerHTML = message
+    ? `<p class="${error ? "error inline-error" : "notice inline-error"}">${escapeHtml(message)}</p>`
+    : "";
+}
+
+function openReportPanel(): void {
+  const panel = document.querySelector<HTMLElement>("#report-panel");
+  const context = document.querySelector<HTMLInputElement>("#report-context");
+  if (!panel) {
+    return;
+  }
+  if (context && lastCasePayload) {
+    context.value = `PIN ${lastCasePayload.case.parcel.pinFormatted}; venue ${lastCasePayload.routing.venue}; generated ${lastCasePayload.generatedAt}`;
+  }
+  setReportStatus(
+    REPORTING_ENABLED
+      ? ""
+      : "Problem reporting is disabled until the Turnstile site key is configured.",
+    true,
+  );
+  panel.hidden = false;
+  const firstField = panel.querySelector<HTMLElement>("select, textarea, input, button");
+  firstField?.focus();
+}
+
+function closeReportPanel(): void {
+  const panel = document.querySelector<HTMLElement>("#report-panel");
+  if (panel) {
+    panel.hidden = true;
+  }
 }
 
 function checkedValue(form: HTMLFormElement, name: string): string {
@@ -707,6 +786,46 @@ async function submitCase(form: HTMLFormElement): Promise<void> {
   }
 }
 
+async function submitReport(form: HTMLFormElement): Promise<void> {
+  if (!REPORTING_ENABLED) {
+    setReportStatus(
+      "Problem reporting is disabled until the Turnstile site key is configured.",
+      true,
+    );
+    return;
+  }
+  if (!form.reportValidity()) {
+    return;
+  }
+  const data = new FormData(form);
+  const turnstileToken = data.get("cf-turnstile-response");
+  setReportStatus("Submitting report...");
+  const response = await fetch("/api/report", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      category: data.get("category"),
+      description: data.get("description"),
+      context: data.get("context"),
+      turnstileToken: typeof turnstileToken === "string" ? turnstileToken : "",
+    }),
+  });
+  const result = (await response.json()) as
+    | { ok: true; issueUrl: string }
+    | { ok: false; error?: { message?: string } };
+  if (!response.ok || !result.ok) {
+    setReportStatus(
+      result.ok
+        ? "The report could not be submitted."
+        : (result.error?.message ?? "The report could not be submitted."),
+      true,
+    );
+    return;
+  }
+  setReportStatus(`Report submitted: ${result.issueUrl}`);
+  form.reset();
+}
+
 function clearEvidenceInputs(): void {
   const evidence = document.querySelector<HTMLElement>("details.evidence");
   if (!evidence) {
@@ -780,6 +899,10 @@ document.addEventListener("submit", (event) => {
     event.preventDefault();
     void submitCase(form);
   }
+  if (form instanceof HTMLFormElement && form.id === "report-form") {
+    event.preventDefault();
+    void submitReport(form);
+  }
 });
 
 document.addEventListener("change", (event) => {
@@ -812,6 +935,15 @@ document.addEventListener("click", (event) => {
   }
   if (target instanceof HTMLElement && target.id === "download-comps") {
     downloadComparableWorkbook();
+  }
+  if (target instanceof HTMLElement && target.id === "report-problem") {
+    openReportPanel();
+  }
+  if (
+    target instanceof HTMLElement &&
+    (target.id === "close-report" || target.id === "report-panel")
+  ) {
+    closeReportPanel();
   }
 });
 

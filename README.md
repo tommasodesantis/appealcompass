@@ -55,9 +55,18 @@ Create `.dev.vars` for local Wrangler development:
 
 ```powershell
 SOCRATA_APP_TOKEN=your_token_here
+TURNSTILE_SECRET_KEY=your_turnstile_secret_here
+GITHUB_ISSUES_TOKEN=your_github_issues_token_here
 ```
 
-The token stays server-side. Do not put it in committed files, browser code, logs, or reports.
+Secrets stay server-side. Do not put Socrata tokens, GitHub tokens, or Turnstile secret keys in
+committed files, browser code, logs, or reports.
+
+Public deployment constants live in `src/domain/publicConfig.ts`:
+
+- `TURNSTILE_SITE_KEY`: public Turnstile site key. When empty, the report form is disabled.
+- `CLOUDFLARE_WEB_ANALYTICS_TOKEN`: public Web Analytics token. When empty, no analytics beacon is
+  rendered.
 
 Run locally:
 
@@ -70,7 +79,9 @@ Then open `http://127.0.0.1:8787`.
 Useful endpoints:
 
 - `GET /api/health`
+- `GET /api/queue`
 - `GET /api/case?pin=03-00-000-000-0001&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
+- `POST /api/report`
 - `GET /print?pin=03-00-000-000-0001&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
 
 ## Testing
@@ -107,14 +118,18 @@ update notes.
 This repository is deploy-ready but this project does not deploy automatically.
 
 1. Authenticate Wrangler.
-2. Add the production secret:
+2. Add the production secrets:
 
    ```powershell
    npx wrangler secret put SOCRATA_APP_TOKEN
+   npx wrangler secret put TURNSTILE_SECRET_KEY
+   npx wrangler secret put GITHUB_ISSUES_TOKEN
    ```
 
-3. Review `wrangler.jsonc`.
-4. Deploy intentionally:
+3. Set the public Turnstile and Web Analytics constants in `src/domain/publicConfig.ts` if those
+   features should be enabled.
+4. Review `wrangler.jsonc`.
+5. Deploy intentionally:
 
    ```powershell
    npx wrangler deploy
