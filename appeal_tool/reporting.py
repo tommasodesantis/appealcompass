@@ -56,6 +56,8 @@ def console_report(
             f"Comparable note: {evidence.comparable_analysis.note}",
         ]
     )
+    for warning in evidence.comparable_analysis.warnings:
+        lines.append(f"COMPARABLE WARNING: {warning}")
     if evidence.arguments:
         lines.append("Arguments:")
         for argument in evidence.arguments:
@@ -101,8 +103,14 @@ def json_summary(
         "comparable_profile": evidence.comparable_analysis.profile_key,
         "comparable_status": evidence.comparable_analysis.status,
         "comparable_note": evidence.comparable_analysis.note,
+        "comparable_missing_data_rate": evidence.comparable_analysis.missing_data_rate,
+        "comparable_warnings": list(evidence.comparable_analysis.warnings),
         "estimated_savings_point": evidence.savings_assumptions.point,
-        "warnings": list(route.warnings) + list(case.data_warnings),
+        "warnings": (
+            list(route.warnings)
+            + list(case.data_warnings)
+            + list(evidence.comparable_analysis.warnings)
+        ),
         "pdf_path": str(pdf_path) if pdf_path else None,
     }
     return json.dumps(payload, indent=2, sort_keys=True)

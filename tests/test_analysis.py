@@ -21,11 +21,74 @@ def test_comparable_analysis_known_fixture_is_strong(fixture_repo: FixtureReposi
     assert comps.gap_pct > 10
 
 
-def test_condo_degrades_without_sqft(fixture_repo: FixtureRepository) -> None:
+def test_condo_degrades_after_measuring_empty_pool(fixture_repo: FixtureRepository) -> None:
     case = fixture_repo.load_case_by_pin("03-00-000-000-0020")
     comps = analyze_comparables(case)
     assert comps.status == "condo"
-    assert "Condo" in comps.note
+    assert comps.missing_data_rate == 100
+    assert "100%" in comps.note
+
+
+def _condo_case_with_missing_rate(
+    fixture_repo: FixtureRepository, missing_count: int, total_count: int
+):
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    parcel = replace(
+        case.parcel,
+        property_class="299",
+        current_av=60000,
+        building_sqft=1000,
+        year_built=1980,
+        neighborhood="0199",
+    )
+    comps = []
+    for index in range(total_count):
+        missing = index < missing_count
+        comps.append(
+            Comparable(
+                pin=f"0300000099{index:04d}",
+                pin_formatted=f"03-00-000-099-{index:04d}",
+                address=f"{index} CONDO ST",
+                building_sqft=None if missing else 980 + index,
+                year_built=1980,
+                av=None if missing else 35000 + index * 1000,
+                neighborhood="0199",
+                lat=41.9902 + index * 0.0001,
+                lon=-87.6972 - index * 0.0001,
+            )
+        )
+    return replace(case, parcel=parcel, comparables=tuple(comps), subject_sales=())
+
+
+def test_condo_missing_rate_above_50_skips_with_measured_note(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = _condo_case_with_missing_rate(fixture_repo, missing_count=6, total_count=10)
+    analysis = analyze_comparables(case)
+    assert analysis.status == "condo"
+    assert analysis.missing_data_rate == 60
+    assert "60%" in analysis.note
+
+
+def test_condo_missing_rate_30_to_50_runs_with_warning(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = _condo_case_with_missing_rate(fixture_repo, missing_count=4, total_count=10)
+    analysis = analyze_comparables(case)
+    assert analysis.status == "ok"
+    assert analysis.missing_data_rate == 40
+    assert analysis.warnings
+    assert "40%" in analysis.warnings[0]
+
+
+def test_condo_missing_rate_below_30_runs_without_warning(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = _condo_case_with_missing_rate(fixture_repo, missing_count=2, total_count=10)
+    analysis = analyze_comparables(case)
+    assert analysis.status == "ok"
+    assert analysis.missing_data_rate == 20
+    assert not analysis.warnings
 
 
 def test_missing_characteristics_degrades_without_crash(fixture_repo: FixtureRepository) -> None:

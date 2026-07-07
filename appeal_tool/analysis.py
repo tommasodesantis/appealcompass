@@ -75,6 +75,8 @@ def _profiled_analysis(
     status: Literal["ok", "condo", "insufficient_data"],
     note: str,
     profile: ComparableProfile,
+    warnings: tuple[str, ...] = (),
+    missing_data_rate: float | None = None,
     scope: str | None = None,
     pool_size: int = 0,
     subject_av_per_sqft: float | None = None,
@@ -89,6 +91,8 @@ def _profiled_analysis(
         profile_key=profile.key,
         profile_label=profile.venue_label,
         metric_label=profile.metric_label,
+        warnings=warnings,
+        missing_data_rate=missing_data_rate,
         scope=scope,
         pool_size=pool_size,
         subject_av_per_sqft=subject_av_per_sqft,
@@ -144,21 +148,64 @@ def _target_total_av(
     return target_metric_value
 
 
+def _condo_missing_data_rate(case: CaseFile, profile: ComparableProfile) -> float:
+    candidates = [comp for comp in case.comparables if comp.pin != case.parcel.pin]
+    if not candidates:
+        return 100.0
+    missing = 0
+    for comp in candidates:
+        metric_value = _comparable_metric_value(comp, profile)
+        if (
+            not comp.building_sqft
+            or comp.building_sqft <= 0
+            or not metric_value
+            or metric_value <= 0
+        ):
+            missing += 1
+    return round(100.0 * missing / len(candidates), 1)
+
+
+def _condo_reliability(
+    case: CaseFile, profile: ComparableProfile
+) -> tuple[bool, tuple[str, ...], float]:
+    missing_rate = _condo_missing_data_rate(case, profile)
+    if missing_rate > 50:
+        return False, (), missing_rate
+    if missing_rate >= 30:
+        return (
+            True,
+            (
+                "Condo comparable analysis is less reliable because "
+                f"{missing_rate:.0f}% of public condo candidates are missing unit sqft or "
+                f"{profile.metric_label}.",
+            ),
+            missing_rate,
+        )
+    return True, (), missing_rate
+
+
 def analyze_comparables(
     case: CaseFile,
     max_comps: int = 10,
     profile: ComparableProfile = ASSESSOR_PROFILE,
 ) -> ComparableAnalysis:
     parcel = case.parcel
+    warnings: tuple[str, ...] = ()
+    missing_data_rate: float | None = None
     if parcel.is_condo:
-        return _profiled_analysis(
-            status="condo",
-            note=(
-                "Condo parcel: public unit square-foot coverage is often incomplete. "
-                "Use building-level equity, sale, appraisal, or factual-error evidence."
-            ),
-            profile=profile,
-        )
+        should_run, warnings, missing_data_rate = _condo_reliability(case, profile)
+        if not should_run:
+            return _profiled_analysis(
+                status="condo",
+                note=(
+                    "Condo comparable analysis skipped after measuring "
+                    f"{missing_data_rate:.0f}% missing unit sqft or {profile.metric_label} "
+                    "in the public condo candidate pool. Use sale, appraisal, building-level "
+                    "equity, or factual-error evidence."
+                ),
+                profile=profile,
+                missing_data_rate=missing_data_rate,
+            )
 
     subject_metric_value = _subject_metric_value(parcel, profile)
     subject_psf = safe_div(subject_metric_value, parcel.building_sqft)
@@ -171,6 +218,8 @@ def analyze_comparables(
                 "available."
             ),
             profile=profile,
+            warnings=warnings,
+            missing_data_rate=missing_data_rate,
         )
 
     candidates = [
@@ -221,6 +270,8 @@ def analyze_comparables(
                 f"{profile.venue_label} profile; too few for a reliable exhibit."
             ),
             profile=profile,
+            warnings=warnings,
+            missing_data_rate=missing_data_rate,
             scope=scope,
             pool_size=len(selected),
         )
@@ -256,6 +307,8 @@ def analyze_comparables(
             f"using {profile.metric_label} per square foot."
         ),
         profile=profile,
+        warnings=warnings,
+        missing_data_rate=missing_data_rate,
         scope=scope,
         pool_size=len(selected),
         subject_av_per_sqft=subject_psf,

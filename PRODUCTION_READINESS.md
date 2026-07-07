@@ -26,7 +26,7 @@ Created from the mission exit criteria. Check a box only when the criterion is v
       survival, runtime, and per-venue verdicts across at least 15 diverse real properties.
 - [ ] Venue-aware comparable selection/exhibits are implemented for every venue judged feasible;
       unavailable PTAB grid fields are explicitly marked as user-supply items, never fabricated.
-- [ ] Condo comparable analysis is gated by measured missing-data rates with the <30%, 30-50%,
+- [x] Condo comparable analysis is gated by measured missing-data rates with the <30%, 30-50%,
       and >50% behavior bands, each covered by tests; the blanket condo skip is gone.
 - [ ] Missing subject sqft/AV cases accept documented user-supplied overrides, clearly labeled as
       user-supplied in console and PDF, with actionable re-run guidance when data is missing and
@@ -132,3 +132,11 @@ Created from the mission exit criteria. Check a box only when the criterion is v
   sqft, style, amenities, and improvement AV fields.
 - Added synthetic known-answer tests for Assessor, BOR, and PTAB profile behavior plus a
   repository regression test for enriched live comparables.
+
+### Phase 2 Iteration 5
+
+- Replaced the blanket condo skip with a measured missing-data gate tied to the active comparable
+  profile.
+- Implemented the required bands: below 30% missing runs normally, 30-50% missing runs with a
+  console/PDF warning, and above 50% missing skips comparable analysis with the measured rate.
+- Added synthetic condo tests for all three bands plus the empty-pool degradation path.

@@ -65,3 +65,6 @@
 - Fallback strategy: remove the blanket `is_condo` skip only after adding the Workstream 3
   runtime missing-data gate. Condo comparable analysis should run when the measured active-profile
   missing-data rate is below 30%, warn at 30-50%, and skip with a measured-rate note above 50%.
+- Runtime status: the missing-data gate is now implemented in `appeal_tool.analysis`; the public
+  data blocker still applies whenever a specific condo candidate pool measures above the 50%
+  missing-data threshold.

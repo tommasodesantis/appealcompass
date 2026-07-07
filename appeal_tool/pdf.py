@@ -156,6 +156,8 @@ def write_packet(
     pdf.kv("Comparable profile", comps.profile_label)
     pdf.kv("Assessment metric", comps.metric_label)
     pdf.para(comps.note)
+    for warning in comps.warnings:
+        pdf.para(f"Warning: {warning}", size=9, style="B")
     if comps.status == "ok":
         pdf.para(
             f"Subject {comps.metric_label}/sqft ${comps.subject_av_per_sqft:,.2f}; "

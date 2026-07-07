@@ -125,6 +125,8 @@ class ComparableAnalysis:
     profile_key: str = "assessor"
     profile_label: str = "Cook County Assessor"
     metric_label: str = "assessed value"
+    warnings: tuple[str, ...] = ()
+    missing_data_rate: float | None = None
     scope: str | None = None
     pool_size: int = 0
     subject_av_per_sqft: float | None = None
