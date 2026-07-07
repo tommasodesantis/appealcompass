@@ -1,104 +1,124 @@
 # Cook County Property Tax Appeal Assistant
 
-Single-entry-point CLI for Cook County, Illinois residential property-tax appeal screening.
+A minimalist Cloudflare Worker webapp for screening Cook County, Illinois residential parcels for
+property-tax appeal evidence.
 
-```powershell
-python appeal_tool.py --pin 03-00-000-000-0001 --fixture-dir tests/fixtures/cases
-```
+It loads public county data server-side, routes a homeowner through the Assessor -> Board of Review
+-> PTAB appeal ladder, and generates a print-optimized evidence packet that can be saved as PDF from
+the browser.
 
 ## What It Does
 
-- Screens for over-assessment using one shared case file: uniformity comparables, overvaluation evidence, assessment history, and estimated savings assumptions.
-- Routes the homeowner across the residential appeal ladder: Cook County Assessor, Board of Review, and Illinois PTAB.
-- Generates a venue-specific pro se evidence packet PDF with routing, deadlines, checklist, evidence summary, and exemptions screen.
+- Looks up a residential parcel by PIN, with fixture-backed demo mode for samples.
+- Screens public data for uniformity, sale/appraisal, factual-error, condition, and assessment-shock
+  evidence.
+- Routes the case to the Cook County Assessor, Cook County Board of Review, Illinois PTAB, or a
+  closed-window preparation path.
+- Shows deadlines, days remaining, official-source links, warning messages, comparable evidence,
+  estimated savings assumptions, and a venue-specific checklist.
+- Produces a printable evidence packet at `/print`.
 
 ## What It Does Not Do
 
 - It is NOT LEGAL ADVICE.
 - It does not file an appeal for you.
-- It does not represent LLCs, corporations, condo associations, or other entities. Those filers generally need an attorney.
-- It does not guess missing deadlines or facts. PTAB deadlines require a user-supplied BOR decision date.
+- It does not represent LLCs, corporations, condo associations, or other entities. Those filers
+  generally need an attorney.
+- It does not guess missing deadlines or facts. PTAB deadlines require a user-supplied BOR decision
+  date.
+- It does not promise savings. Estimated savings are rough ranges using the configured equalizer and
+  tax-rate assumptions.
 
 ## Appeal Ladder
 
-1. Cook County Assessor appeal: first-level appeal during the township filing window. This is also where property-description errors and Certificates of Error for prior-year factual errors or missed exemptions are surfaced.
+1. Cook County Assessor appeal: first-level appeal during the township filing window. This is also
+   where property-description errors and Certificates of Error for prior-year factual errors or
+   missed exemptions are surfaced.
 2. Board of Review appeal: second-level appeal under the BOR township calendar and official rules.
-3. Illinois Property Tax Appeal Board: state-level appeal after a BOR decision. PTAB filing is due within 30 days of the written BOR decision notice. The tool computes this only from `--bor-decision-date`.
+3. Illinois Property Tax Appeal Board: state-level appeal after a BOR decision. PTAB filing is due
+   within 30 days of the written BOR decision notice; this app computes that date only from a BOR
+   decision date entered by the user.
 
-## Installation
+Every deadline shown by the app links users back to the official venue source and tells them to
+verify before filing.
 
-Python 3.10+ is required.
+## Local Development
+
+Install dependencies:
 
 ```powershell
-python -m pip install -r requirements.txt
+npm install
 ```
 
-Development verification:
+Create `.dev.vars` for local Wrangler development:
 
 ```powershell
-python -m pip install -r requirements-dev.txt
-python scripts/verify.py
+SOCRATA_APP_TOKEN=your_token_here
 ```
 
-## Usage Examples
+The token stays server-side. Do not put it in committed files, browser code, logs, or reports.
 
-Auto-route by PIN:
+Run locally:
 
 ```powershell
-python appeal_tool.py --pin 03-00-000-000-0001 --output-dir packets
+npm run dev
 ```
 
-Force BOR packet:
+Then open `http://127.0.0.1:8787`.
+
+Useful endpoints:
+
+- `GET /api/health`
+- `GET /api/demo`
+- `GET /api/case?pin=03-00-000-000-0001&demo=1`
+- `GET /api/address?q=MOZART&demo=1`
+- `GET /print?pin=03-00-000-000-0001&demo=1`
+
+## Testing
 
 ```powershell
-python appeal_tool.py --pin 03-00-000-000-0001 --venue bor --output-dir packets
+npm run verify
 ```
 
-PTAB packet with required BOR decision date:
+`verify` builds the tiny browser bundle, runs Biome linting, TypeScript typechecking, and all
+Vitest tests.
+
+Fixture smoke against a running local Worker:
 
 ```powershell
-python appeal_tool.py --pin 03-00-000-000-0001 --venue ptab --bor-decision-date 2026-05-20 --output-dir packets
-```
-
-Add homeowner evidence:
-
-```powershell
-python appeal_tool.py --pin 03-00-000-000-0001 --purchase-price 285000 --purchase-date 2024-06-15 --condition-issue "roof leak"
-```
-
-Offline fixture mode for repeatable tests:
-
-```powershell
-python appeal_tool.py --pin 03-00-000-000-0001 --fixture-dir tests/fixtures/cases
+npm run dev
+npm run smoke:fixtures
 ```
 
 ## Data Sources
 
-- Cook County Socrata datasets for parcel, assessment, residential characteristics, and sales data.
-- Cook County Board of Review dates and rules: https://www.cookcountyboardofreview.com/
-- Cook County Assessor appeals and exemptions: https://www.cookcountyassessor.com/
-- Illinois PTAB: https://ptab.illinois.gov/
+The Worker reads Cook County Socrata datasets server-side:
 
-Set `SOCRATA_APP_TOKEN` to reduce throttling risk. The tool also supports an on-disk `.cache/` and `--no-cache`.
+- Parcel universe: `nj4t-kc8j`
+- Assessed values: `uzyt-m557`
+- Residential characteristics: `x54s-btds`
+- Parcel sales: `wvhk-k5uv`
 
-## Annual Constants Update Procedure
+See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) and [docs/LEARNINGS.md](docs/LEARNINGS.md) for
+dataset quirks, public-data limits, comparable feasibility findings, concurrency limits, and annual
+update notes.
 
-Update `appeal_tool/config.py` before each assessment session:
+## Deploying To Cloudflare
 
-- `ASSESSMENT_YEAR`
-- `STATE_EQUALIZER`
-- `DEFAULT_TAX_RATE`
-- CCAO township filing windows
-- BOR township filing windows and evidence deadlines
-- Calendar `session_end` values
-- Official source URLs and source notes
+This repository is deploy-ready but this project does not deploy automatically.
 
-If today's date is past a configured session end, the CLI and PDF show a staleness warning and direct the homeowner to the official source URL.
+1. Authenticate Wrangler.
+2. Add the production secret:
 
-## Verification
+   ```powershell
+   npx wrangler secret put SOCRATA_APP_TOKEN
+   ```
 
-```powershell
-python scripts/verify.py
-```
+3. Review `wrangler.jsonc`.
+4. Deploy intentionally:
 
-The verifier runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` with coverage.
+   ```powershell
+   npx wrangler deploy
+   ```
+
+The browser talks only to the Worker API; the Socrata token is never sent client-side.

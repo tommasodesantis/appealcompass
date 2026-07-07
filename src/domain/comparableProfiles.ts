@@ -45,7 +45,7 @@ export const ASSESSOR_PROFILE: ComparableProfile = {
   landTolerance: null,
   feasibilityVerdict: "FEASIBLE-WITH-CAVEATS",
   sourceNote:
-    "Profile verified against reachable Phase 2 official guidance and measured in reports/comps_feasibility_2026-07-06.md.",
+    "Profile verified against reachable Phase 2 official guidance and preserved in docs/LEARNINGS.md.",
 };
 
 export const BOR_PROFILE: ComparableProfile = {
@@ -86,8 +86,7 @@ export const PTAB_PROFILE: ComparableProfile = {
   requireAmenity: true,
   landTolerance: 0.5,
   feasibilityVerdict: "NOT FEASIBLE",
-  sourceNote:
-    "Full PTAB grid alignment is blocked by public-data limits; see BLOCKERS.md and reports/comps_feasibility_2026-07-06.md.",
+  sourceNote: "Full PTAB grid alignment is blocked by public-data limits; see docs/LEARNINGS.md.",
 };
 
 export const PROFILES_BY_VENUE: Record<ResolvedVenue, ComparableProfile> = {
