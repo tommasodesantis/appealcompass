@@ -64,6 +64,59 @@ def _subject_metric_value(parcel: Parcel, profile: ComparableProfile) -> float |
     return parcel.current_av
 
 
+def _effective_sqft(case: CaseFile) -> float | None:
+    return case.parcel.building_sqft or case.user_evidence.actual_sqft
+
+
+def _effective_total_av(case: CaseFile) -> float | None:
+    return case.parcel.current_av or case.user_evidence.actual_av
+
+
+def _effective_metric_value(case: CaseFile, profile: ComparableProfile) -> float | None:
+    official = _subject_metric_value(case.parcel, profile)
+    if official:
+        return official
+    if profile.metric == "improvement_av":
+        return case.user_evidence.actual_improvement_av
+    return case.user_evidence.actual_av
+
+
+def _user_supplied_warnings(case: CaseFile, profile: ComparableProfile) -> tuple[str, ...]:
+    warnings: list[str] = []
+    if case.parcel.building_sqft is None and case.user_evidence.actual_sqft:
+        warnings.append(
+            "Using user-supplied building sqft for comparable analysis; document it with a "
+            "property record card, appraisal, plans, or other reliable source."
+        )
+    if case.parcel.current_av is None and case.user_evidence.actual_av:
+        warnings.append(
+            "Using user-supplied current total assessed value for analysis; attach official "
+            "assessment documentation."
+        )
+    if (
+        profile.metric == "improvement_av"
+        and case.parcel.current_improvement_av is None
+        and case.user_evidence.actual_improvement_av
+    ):
+        warnings.append(
+            "Using user-supplied building/improvement assessment for comparable analysis; "
+            "document it with the property record card or official assessment notice."
+        )
+    return tuple(warnings)
+
+
+def _missing_subject_flags(case: CaseFile, profile: ComparableProfile) -> tuple[str, ...]:
+    flags = []
+    if not _effective_sqft(case):
+        flags.append("--actual-sqft")
+    if profile.metric == "improvement_av":
+        if not _effective_metric_value(case, profile):
+            flags.append("--actual-improvement-av")
+    elif not _effective_metric_value(case, profile):
+        flags.append("--actual-av")
+    return tuple(flags)
+
+
 def _comparable_metric_value(comp: Comparable, profile: ComparableProfile) -> float | None:
     if profile.metric == "improvement_av":
         return comp.improvement_av
@@ -140,11 +193,15 @@ def _passes_profile_requirements(
 
 
 def _target_total_av(
-    parcel: Parcel, profile: ComparableProfile, target_metric_value: float
+    case: CaseFile, profile: ComparableProfile, target_metric_value: float
 ) -> float:
-    if profile.metric == "improvement_av" and parcel.current_improvement_av and parcel.current_av:
-        reduction = max(0.0, parcel.current_improvement_av - target_metric_value)
-        return max(0.0, parcel.current_av - reduction)
+    current_total = _effective_total_av(case)
+    current_improvement = (
+        case.parcel.current_improvement_av or case.user_evidence.actual_improvement_av
+    )
+    if profile.metric == "improvement_av" and current_improvement and current_total:
+        reduction = max(0.0, current_improvement - target_metric_value)
+        return max(0.0, current_total - reduction)
     return target_metric_value
 
 
@@ -190,7 +247,7 @@ def analyze_comparables(
     profile: ComparableProfile = ASSESSOR_PROFILE,
 ) -> ComparableAnalysis:
     parcel = case.parcel
-    warnings: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = _user_supplied_warnings(case, profile)
     missing_data_rate: float | None = None
     if parcel.is_condo:
         should_run, warnings, missing_data_rate = _condo_reliability(case, profile)
@@ -207,15 +264,18 @@ def analyze_comparables(
                 missing_data_rate=missing_data_rate,
             )
 
-    subject_metric_value = _subject_metric_value(parcel, profile)
-    subject_psf = safe_div(subject_metric_value, parcel.building_sqft)
-    if subject_psf is None or parcel.building_sqft is None or parcel.building_sqft <= 0:
+    subject_metric_value = _effective_metric_value(case, profile)
+    subject_sqft = _effective_sqft(case)
+    subject_psf = safe_div(subject_metric_value, subject_sqft)
+    if subject_psf is None or subject_sqft is None or subject_sqft <= 0:
+        flags = _missing_subject_flags(case, profile)
+        flag_text = " ".join(flags) if flags else "documented subject-data override flags"
         return _profiled_analysis(
             status="insufficient_data",
             note=(
                 "Missing subject building square footage or "
-                f"{profile.metric_label}; re-run with documented user-supplied values if "
-                "available."
+                f"{profile.metric_label}. Re-run with {flag_text} if you can document the "
+                "missing value."
             ),
             profile=profile,
             warnings=warnings,
@@ -239,9 +299,9 @@ def analyze_comparables(
             comp
             for comp in candidates
             if comp.building_sqft is not None
-            and parcel.building_sqft * (1 - step.sqft_tolerance)
+            and subject_sqft * (1 - step.sqft_tolerance)
             <= comp.building_sqft
-            <= parcel.building_sqft * (1 + step.sqft_tolerance)
+            <= subject_sqft * (1 + step.sqft_tolerance)
             and (
                 parcel.year_built is None
                 or comp.year_built is None
@@ -336,7 +396,8 @@ def build_evidence_summary(
     parcel = case.parcel
     profile = profile_for_venue(venue)
     comparable_analysis = analyze_comparables(case, profile=profile)
-    implied_market = parcel.current_av / ASSESSMENT_LEVEL if parcel.current_av else None
+    current_total_av = _effective_total_av(case)
+    implied_market = current_total_av / ASSESSMENT_LEVEL if current_total_av else None
     arguments: list[EvidenceArgument] = []
     tier_points = 0
 
@@ -351,11 +412,11 @@ def build_evidence_summary(
             tier_points += 1
         else:
             strength = "supporting"
-        if gap > 0 and comparable_analysis.median_av_per_sqft and parcel.building_sqft:
-            target_metric = comparable_analysis.median_av_per_sqft * parcel.building_sqft
-            target_av = _target_total_av(parcel, profile, target_metric)
+        if gap > 0 and comparable_analysis.median_av_per_sqft and _effective_sqft(case):
+            target_metric = comparable_analysis.median_av_per_sqft * (_effective_sqft(case) or 0)
+            target_av = _target_total_av(case, profile, target_metric)
             _, point, _ = estimated_savings_range(
-                (parcel.current_av or 0) - target_av, STATE_EQUALIZER, tax_rate
+                (current_total_av or 0) - target_av, STATE_EQUALIZER, tax_rate
             )
             arguments.append(
                 EvidenceArgument(
@@ -400,7 +461,7 @@ def build_evidence_summary(
         tier_points += 2 if over >= 10 else 1
         target_av = evidence_value * ASSESSMENT_LEVEL
         _, point, _ = estimated_savings_range(
-            (parcel.current_av or 0) - target_av, STATE_EQUALIZER, tax_rate
+            (current_total_av or 0) - target_av, STATE_EQUALIZER, tax_rate
         )
         arguments.append(
             EvidenceArgument(

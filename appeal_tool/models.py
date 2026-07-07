@@ -88,6 +88,8 @@ class UserEvidence:
     demolition_claim: bool = False
     assessor_appeal_filed: bool = False
     actual_sqft: float | None = None
+    actual_av: float | None = None
+    actual_improvement_av: float | None = None
 
 
 @dataclass(frozen=True)

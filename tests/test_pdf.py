@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
 from pypdf import PdfReader
 
 from appeal_tool.analysis import build_evidence_summary
+from appeal_tool.models import UserEvidence
 from appeal_tool.pdf import write_packet
 from appeal_tool.repository import FixtureRepository
 from appeal_tool.routing import route_case
@@ -68,3 +70,25 @@ def test_closed_window_packet_uses_closed_adapter(
     assert "Closed-Window Preparation Instructions" in text
     assert "Certificate of Error" in text
     assert "BOR Rules Checklist" not in text
+
+
+def test_packet_labels_user_supplied_subject_values(
+    fixture_repo: FixtureRepository, tmp_path: object
+) -> None:
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    user_evidence = UserEvidence(
+        actual_sqft=1800,
+        actual_av=60000,
+        actual_improvement_av=50000,
+    )
+    override_case = replace(
+        case.with_user_evidence(user_evidence),
+        parcel=replace(case.parcel, building_sqft=None, current_av=None),
+        subject_sales=(),
+    )
+    route = route_case(override_case.parcel.township_name, date(2025, 7, 10), "bor")
+    evidence = build_evidence_summary(override_case, 0.10, venue=route.venue)
+    path = write_packet(override_case, evidence, route, tmp_path)  # type: ignore[arg-type]
+    text = _text(path)
+    assert "user-supplied; document required" in text
+    assert "Building / improvement assessed value" in text

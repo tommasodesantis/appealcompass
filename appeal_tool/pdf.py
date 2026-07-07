@@ -52,6 +52,32 @@ def comparable_metric_value(
     return comp_av
 
 
+def subject_sqft(case: CaseFile) -> str:
+    if case.parcel.building_sqft:
+        return f"{case.parcel.building_sqft:,.0f}"
+    if case.user_evidence.actual_sqft:
+        return f"{case.user_evidence.actual_sqft:,.0f} (user-supplied; document required)"
+    return "Missing"
+
+
+def subject_total_av(case: CaseFile) -> str:
+    if case.parcel.current_av:
+        return money(case.parcel.current_av)
+    if case.user_evidence.actual_av:
+        return f"{money(case.user_evidence.actual_av)} (user-supplied; document required)"
+    return money(None)
+
+
+def subject_improvement_av(case: CaseFile) -> str | None:
+    if case.parcel.current_improvement_av:
+        return money(case.parcel.current_improvement_av)
+    if case.user_evidence.actual_improvement_av:
+        return (
+            f"{money(case.user_evidence.actual_improvement_av)} (user-supplied; document required)"
+        )
+    return None
+
+
 class PacketPdf(FPDF):  # type: ignore[misc]
     def __init__(self, title: str) -> None:
         super().__init__()
@@ -126,10 +152,13 @@ def write_packet(
     pdf.kv("PIN", parcel.pin_formatted)
     pdf.kv("Address", parcel_address(parcel))
     pdf.kv("Class / Township", f"{parcel.property_class} / {parcel.township_name}")
-    pdf.kv("Building sqft", f"{parcel.building_sqft:,.0f}" if parcel.building_sqft else "Missing")
-    pdf.kv("Current assessed value", money(parcel.current_av))
-    if parcel.current_av:
-        pdf.kv("Implied market value", money(parcel.current_av / ASSESSMENT_LEVEL))
+    pdf.kv("Building sqft", subject_sqft(case))
+    pdf.kv("Current assessed value", subject_total_av(case))
+    if improvement_av := subject_improvement_av(case):
+        pdf.kv("Building / improvement assessed value", improvement_av)
+    effective_av = parcel.current_av or case.user_evidence.actual_av
+    if effective_av:
+        pdf.kv("Implied market value", money(effective_av / ASSESSMENT_LEVEL))
 
     pdf.h1("Evidence Tier")
     pdf.para(f"{evidence.tier}: {evidence.tier_message}", style="B")

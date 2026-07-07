@@ -56,6 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--appraisal-date")
     parser.add_argument("--condition-issue", action="append", default=[])
     parser.add_argument("--actual-sqft")
+    parser.add_argument("--actual-av")
+    parser.add_argument("--actual-improvement-av")
     parser.add_argument(
         "--ownership-type",
         choices=["individual", "llc", "corporation", "other"],
@@ -96,6 +98,10 @@ def _user_evidence_from_args(args: argparse.Namespace) -> UserEvidence:
         demolition_claim=bool(args.demolition_claim),
         assessor_appeal_filed=bool(args.assessor_appeal_filed),
         actual_sqft=_positive_float(args.actual_sqft, "--actual-sqft"),
+        actual_av=_positive_float(args.actual_av, "--actual-av"),
+        actual_improvement_av=_positive_float(
+            args.actual_improvement_av, "--actual-improvement-av"
+        ),
     )
 
 

@@ -95,7 +95,66 @@ def test_missing_characteristics_degrades_without_crash(fixture_repo: FixtureRep
     case = fixture_repo.load_case_by_pin("03-00-000-000-0030")
     comps = analyze_comparables(case)
     assert comps.status == "insufficient_data"
-    assert "Missing subject" in comps.note
+    assert "--actual-sqft" in comps.note
+
+
+def test_missing_sqft_with_user_override_completes_and_labels_source(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    parcel = replace(case.parcel, building_sqft=None)
+    user_evidence = UserEvidence(actual_sqft=1800)
+    override_case = replace(
+        case.with_user_evidence(user_evidence),
+        parcel=parcel,
+        subject_sales=(),
+    )
+    analysis = analyze_comparables(override_case)
+    assert analysis.status == "ok"
+    assert any("user-supplied building sqft" in warning for warning in analysis.warnings)
+    assert override_case.parcel.building_sqft is None
+
+
+def test_missing_total_av_guidance_names_actual_av_flag(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    missing_av_case = replace(case, parcel=replace(case.parcel, current_av=None))
+    analysis = analyze_comparables(missing_av_case)
+    assert analysis.status == "insufficient_data"
+    assert "--actual-av" in analysis.note
+
+
+def test_bor_missing_improvement_av_guidance_names_improvement_flag(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    comps = tuple(
+        replace(comp, improvement_av=comp.av) for comp in case.comparables if comp.av is not None
+    )
+    missing_improvement_case = replace(case, comparables=comps)
+    analysis = analyze_comparables(missing_improvement_case, profile=BOR_PROFILE)
+    assert analysis.status == "insufficient_data"
+    assert "--actual-improvement-av" in analysis.note
+
+
+def test_bor_user_improvement_av_override_completes_without_mutating_official_record(
+    fixture_repo: FixtureRepository,
+) -> None:
+    case = fixture_repo.load_case_by_pin("03-00-000-000-0001")
+    comps = tuple(
+        replace(comp, improvement_av=comp.av) for comp in case.comparables if comp.av is not None
+    )
+    user_evidence = UserEvidence(actual_improvement_av=60000)
+    override_case = replace(
+        case.with_user_evidence(user_evidence),
+        comparables=comps,
+        subject_sales=(),
+    )
+    analysis = analyze_comparables(override_case, profile=BOR_PROFILE)
+    assert analysis.status == "ok"
+    assert any("user-supplied building/improvement" in warning for warning in analysis.warnings)
+    assert override_case.parcel.current_improvement_av is None
 
 
 def test_evidence_summary_has_honest_tier(fixture_repo: FixtureRepository) -> None:

@@ -28,7 +28,7 @@ Created from the mission exit criteria. Check a box only when the criterion is v
       unavailable PTAB grid fields are explicitly marked as user-supply items, never fabricated.
 - [x] Condo comparable analysis is gated by measured missing-data rates with the <30%, 30-50%,
       and >50% behavior bands, each covered by tests; the blanket condo skip is gone.
-- [ ] Missing subject sqft/AV cases accept documented user-supplied overrides, clearly labeled as
+- [x] Missing subject sqft/AV cases accept documented user-supplied overrides, clearly labeled as
       user-supplied in console and PDF, with actionable re-run guidance when data is missing and
       no override was given.
 - [ ] Live comparables are enriched with parcel-universe fields; the live test validates
@@ -140,3 +140,14 @@ Created from the mission exit criteria. Check a box only when the criterion is v
 - Implemented the required bands: below 30% missing runs normally, 30-50% missing runs with a
   console/PDF warning, and above 50% missing skips comparable analysis with the measured rate.
 - Added synthetic condo tests for all three bands plus the empty-pool degradation path.
+
+### Phase 2 Iteration 6
+
+- Added documented subject-data overrides for missing official values: `--actual-sqft`,
+  `--actual-av`, and `--actual-improvement-av`.
+- Updated comparable analysis to use overrides only when the corresponding official subject field
+  is missing, and to keep user values labeled rather than mutating official record data.
+- Made missing-data guidance venue-aware: Assessor-style profiles name `--actual-av`, while
+  BOR/PTAB-style profiles name `--actual-improvement-av`.
+- Added console/PDF/JSON labeling for user-supplied values and tests for completed analysis,
+  actionable guidance, and non-masquerading official data.

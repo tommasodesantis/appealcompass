@@ -11,6 +11,32 @@ def _money(value: float | None) -> str:
     return "not available" if value is None else f"${value:,.0f}"
 
 
+def _subject_sqft(case: CaseFile) -> str:
+    if case.parcel.building_sqft:
+        return f"{case.parcel.building_sqft:,.0f}"
+    if case.user_evidence.actual_sqft:
+        return f"{case.user_evidence.actual_sqft:,.0f} (user-supplied; document required)"
+    return "missing"
+
+
+def _subject_total_av(case: CaseFile) -> str:
+    if case.parcel.current_av:
+        return _money(case.parcel.current_av)
+    if case.user_evidence.actual_av:
+        return f"{_money(case.user_evidence.actual_av)} (user-supplied; document required)"
+    return _money(None)
+
+
+def _subject_improvement_av(case: CaseFile) -> str | None:
+    if case.parcel.current_improvement_av:
+        return _money(case.parcel.current_improvement_av)
+    if case.user_evidence.actual_improvement_av:
+        return (
+            f"{_money(case.user_evidence.actual_improvement_av)} (user-supplied; document required)"
+        )
+    return None
+
+
 def console_report(
     case: CaseFile, evidence: EvidenceSummary, route: RouteResult, pdf_path: Path | None
 ) -> str:
@@ -32,17 +58,19 @@ def console_report(
         lines.append(f"DATA WARNING: {warning}")
 
     parcel = case.parcel
-    lines.extend(
+    subject_lines = [
+        "",
+        "SUBJECT",
+        f"PIN: {parcel.pin_formatted}",
+        f"Address: {parcel_address(parcel)}",
+        f"Class / township: {parcel.property_class} / {parcel.township_name}",
+        f"Building sqft: {_subject_sqft(case)}",
+        f"Current assessed value: {_subject_total_av(case)}",
+    ]
+    if improvement_av := _subject_improvement_av(case):
+        subject_lines.append(f"Building / improvement assessed value: {improvement_av}")
+    subject_lines.extend(
         [
-            "",
-            "SUBJECT",
-            f"PIN: {parcel.pin_formatted}",
-            f"Address: {parcel_address(parcel)}",
-            f"Class / township: {parcel.property_class} / {parcel.township_name}",
-            f"Building sqft: {parcel.building_sqft:,.0f}"
-            if parcel.building_sqft
-            else "Building sqft: missing",
-            f"Current assessed value: {_money(parcel.current_av)}",
             "",
             "EVIDENCE",
             f"Tier: {evidence.tier}",
@@ -56,6 +84,7 @@ def console_report(
             f"Comparable note: {evidence.comparable_analysis.note}",
         ]
     )
+    lines.extend(subject_lines)
     for warning in evidence.comparable_analysis.warnings:
         lines.append(f"COMPARABLE WARNING: {warning}")
     if evidence.arguments:
