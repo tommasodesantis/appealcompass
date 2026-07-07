@@ -1,4 +1,6 @@
 import worker from "./index";
+import { QUEUED_MESSAGE, createWorker } from "./index";
+import { ConcurrencyLimiter } from "./limiter";
 
 const REQUIRED_STEP_ONE = "ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no";
 
@@ -129,6 +131,79 @@ test("case endpoint rejects unsupported jurisdictions", async () => {
 test("public demo endpoint is removed", async () => {
   const response = await worker.fetch(new Request("http://example.test/api/demo"), {});
   expect(response.status).toBe(404);
+});
+
+function caseRequest(index = 0): Request {
+  return new Request(
+    `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&today=2025-07-10&request=${index}&${REQUIRED_STEP_ONE}`,
+  );
+}
+
+test("assessment limiter queues a fifth simultaneous case request and completes it", async () => {
+  const limiter = new ConcurrencyLimiter(4);
+  let active = 0;
+  let maxActive = 0;
+  const testWorker = createWorker({
+    assessmentLimiter: limiter,
+    queueTimeoutMs: 1000,
+    caseBuilder: async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return { ok: true } as never;
+    },
+  });
+
+  const requests = Array.from({ length: 5 }, (_, index) =>
+    testWorker.fetch(caseRequest(index), {}),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(limiter.activeCount).toBe(4);
+  expect(limiter.pendingCount).toBe(1);
+
+  const queueResponse = await testWorker.fetch(new Request("http://example.test/api/queue"), {});
+  await expect(queueResponse.json()).resolves.toMatchObject({
+    ok: true,
+    active: 4,
+    queued: 1,
+    busy: true,
+    message: QUEUED_MESSAGE,
+  });
+
+  const responses = await Promise.all(requests);
+  expect(maxActive).toBeLessThanOrEqual(4);
+  expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200]);
+});
+
+test("assessment queue timeout returns friendly 503", async () => {
+  const limiter = new ConcurrencyLimiter(1);
+  let releaseFirst = () => {};
+  const testWorker = createWorker({
+    assessmentLimiter: limiter,
+    queueTimeoutMs: 5,
+    caseBuilder: async () => {
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      return { ok: true } as never;
+    },
+  });
+
+  const first = testWorker.fetch(caseRequest(1), {});
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const second = await testWorker.fetch(caseRequest(2), {});
+  expect(second.status).toBe(503);
+  await expect(second.json()).resolves.toMatchObject({
+    ok: false,
+    error: {
+      kind: "queue_timeout",
+      message: expect.stringContaining("busy helping other homeowners"),
+    },
+  });
+
+  releaseFirst();
+  await expect(first).resolves.toMatchObject({ status: 200 });
 });
 
 interface CasePayloadLike {

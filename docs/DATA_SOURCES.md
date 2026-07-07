@@ -29,4 +29,10 @@ Socrata app token.
 - Cache TTL: 12 hours.
 - Identical in-flight Socrata requests are coalesced within the Worker instance.
 - Per-case outbound Socrata fetch concurrency is capped at 2.
+- Case and print builds are capped at 4 concurrent assessments per Worker instance. Extra requests
+  wait in FIFO order instead of increasing Socrata pressure.
+- Queued assessments wait up to 60 seconds. If a request cannot start in that window, the API
+  returns a friendly 503 with retry guidance.
+- `/api/queue` exposes active/queued counts so the browser can show a plain-language busy message
+  while the user waits.
 - The Socrata app token is read from `SOCRATA_APP_TOKEN` and never committed.

@@ -136,3 +136,15 @@ code, tests, and user-facing copy.
 - Phase 6 implementation: `buildEvidenceSummary` filters recorded sales and user-reported
   purchases through this rule before assigning an overvaluation target or estimated savings.
   Appraisals remain labeled by date; no deterministic official appraisal-age window was identified.
+
+## Assessment Queueing
+
+- Per-case outbound Socrata fetch concurrency stays capped at 2; this remains the measured safe
+  ceiling for a single case build.
+- Case and print builds now share an assessment-level limiter capped at 4 concurrent builds per
+  Worker instance. This matches the measured token-backed Socrata ceiling while allowing several
+  homeowners to proceed at once.
+- Requests above that limit wait in FIFO order. They time out after 60 seconds with friendly retry
+  guidance instead of failing immediately or increasing upstream pressure.
+- `/api/queue` reports active and queued counts so the browser can tell a user when Appeal Compass
+  is busy and the assessment is in line.

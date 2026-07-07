@@ -6,6 +6,12 @@ interface ApiError {
   };
 }
 
+interface QueueStatus {
+  ok: true;
+  busy: boolean;
+  message: string | null;
+}
+
 interface CasePayload {
   ok: true;
   demo: boolean;
@@ -112,6 +118,8 @@ const money = new Intl.NumberFormat("en-US", {
 
 const ENTITY_REFUSAL_MESSAGE =
   "Appeal Compass is designed only for individual residential homeowners appealing their own home; entity-owned, commercial, and association properties are not supported and generally require an attorney.";
+const QUEUED_MESSAGE =
+  "Appeal Compass is busy helping other homeowners right now. You're in line — keep this page open and your assessment will start automatically.";
 const CCAO_EXEMPTIONS_URL = "https://www.cookcountyassessoril.gov/exemptions";
 const COOK_PROPERTY_TAX_PORTAL_URL = "https://www.cookcountypropertyinfo.com/";
 let tooltipCounter = 0;
@@ -223,13 +231,15 @@ function siteFooter(): string {
   </footer>`;
 }
 
-function startProgress(): () => void {
-  const steps = [
-    "Looking up your property...",
-    "Fetching assessment history...",
-    "Finding similar homes...",
-    "Building the evidence summary...",
-  ];
+function startProgress(initialMessage: string | null = null): () => void {
+  const steps = initialMessage
+    ? [initialMessage]
+    : [
+        "Looking up your property...",
+        "Fetching assessment history...",
+        "Finding similar homes...",
+        "Building the evidence summary...",
+      ];
   let index = 0;
   const firstStep = steps[0] ?? "";
   const progress = document.querySelector<HTMLElement>("#progress");
@@ -244,6 +254,15 @@ function startProgress(): () => void {
     }
   }, 650);
   return () => window.clearInterval(timer);
+}
+
+async function queuedProgressMessage(): Promise<string | null> {
+  try {
+    const status = await fetchJson<QueueStatus>("/api/queue");
+    return status.busy ? (status.message ?? QUEUED_MESSAGE) : null;
+  } catch {
+    return null;
+  }
 }
 
 function shell(): void {
@@ -640,7 +659,7 @@ function clearAssessmentSurfaces(): void {
 
 async function loadCase(params: URLSearchParams): Promise<void> {
   clearAssessmentSurfaces();
-  const stop = startProgress();
+  const stop = startProgress(await queuedProgressMessage());
   try {
     const payload = await fetchJson<CasePayload>(`/api/case?${params.toString()}`);
     clearAssessmentSurfaces();
