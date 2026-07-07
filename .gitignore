@@ -3,9 +3,14 @@
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.wrangler/
 .clean_venv/
 .venv/
 __pycache__/
+node_modules/
+dist/
+coverage/
+.dev.vars
 *.py[cod]
 packet_*.pdf
 map_exhibit.png
