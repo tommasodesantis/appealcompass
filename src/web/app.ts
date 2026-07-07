@@ -111,6 +111,8 @@ const money = new Intl.NumberFormat("en-US", {
 
 const ENTITY_REFUSAL_MESSAGE =
   "Appeal Compass is designed only for individual residential homeowners appealing their own home; entity-owned, commercial, and association properties are not supported and generally require an attorney.";
+const CCAO_EXEMPTIONS_URL = "https://www.cookcountyassessoril.gov/exemptions";
+const COOK_PROPERTY_TAX_PORTAL_URL = "https://www.cookcountypropertyinfo.com/";
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -118,6 +120,27 @@ function escapeHtml(value: unknown): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function externalLink(url: string, label: string): string {
+  return `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}<span class="sr-only"> (opens in new tab)</span></a>`;
+}
+
+function linkedText(value: unknown): string {
+  const text = String(value ?? "");
+  const pattern = /https?:\/\/[^\s<>"']+/g;
+  let rendered = "";
+  let lastIndex = 0;
+  for (const match of text.matchAll(pattern)) {
+    const rawUrl = match[0];
+    const start = match.index ?? 0;
+    const trailing = rawUrl.match(/[.,;:)]+$/)?.[0] ?? "";
+    const url = rawUrl.slice(0, rawUrl.length - trailing.length);
+    rendered += escapeHtml(text.slice(lastIndex, start));
+    rendered += `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}<span class="sr-only"> (opens in new tab)</span></a>${escapeHtml(trailing)}`;
+    lastIndex = start + rawUrl.length;
+  }
+  return rendered + escapeHtml(text.slice(lastIndex));
 }
 
 function dollars(value: number | null): string {
@@ -237,7 +260,7 @@ function shell(): void {
             <input name="pin" autocomplete="off" inputmode="numeric" placeholder="03-00-000-000-0001" required>
           </label>
         </div>
-        <p class="hint pin-help">Don't know your PIN? You can recover it from the <a href="https://www.cookcountypropertyinfo.com/" target="_blank" rel="noreferrer">Cook County Property Tax Portal<span class="sr-only"> (opens in new tab)</span></a>.</p>
+        <p class="hint pin-help">Don't know your PIN? You can recover it from the ${externalLink(COOK_PROPERTY_TAX_PORTAL_URL, "Cook County Property Tax Portal")}.</p>
 
         <fieldset class="question-group">
           <legend>Ownership type</legend>
@@ -419,8 +442,17 @@ function warningList(warnings: string[]): string {
     return "";
   }
   return `<section class="warnings" aria-label="Warnings"><h2>Warnings</h2><ul>${warnings
-    .map((warning) => `<li>${escapeHtml(warning)}</li>`)
+    .map((warning) => `<li>${linkedText(warning)}</li>`)
     .join("")}</ul></section>`;
+}
+
+function renderExemptionsSection(): string {
+  return `<section class="panel" aria-labelledby="exemptions">
+    <h2 id="exemptions">Exemptions and past-year corrections</h2>
+    <p>Exemptions are fixed reductions in taxable value for owner-occupants, seniors, veterans, people with disabilities, and some other homeowners. They can be worth more than an appeal.</p>
+    <p>Check your exemptions on the ${externalLink(CCAO_EXEMPTIONS_URL, "Cook County Assessor exemptions page")} and the ${externalLink(COOK_PROPERTY_TAX_PORTAL_URL, "Cook County Property Tax Portal")}. Bring documentation for any missing or incorrect exemption.</p>
+    <p>A Certificate of Error is a Cook County process to fix past-year mistakes - like a missed exemption or wrong property facts - which can lead to a refund. Ask the Assessor's office about it.</p>
+  </section>`;
 }
 
 function renderDeadline(payload: CasePayload): string {
@@ -534,7 +566,7 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
       <h2 id="step-three">Routing decision</h2>
       <p class="headline">${escapeHtml(payload.routing.headline)}</p>
       ${renderDeadline(payload)}
-      <ul>${payload.routing.reasoning.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>
+      <ul>${payload.routing.reasoning.map((reason) => `<li>${linkedText(reason)}</li>`).join("")}</ul>
     </section>
 
     <section class="subject panel">
@@ -560,9 +592,11 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
       <div class="step-label">Step 5</div>
       <h2 id="step-five">${escapeHtml(payload.venue.name)} checklist</h2>
       <p class="hint">Use this checklist to assemble documents before filing at the official venue.</p>
-      <ul>${payload.venue.checklist.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      <ul>${payload.venue.checklist.map((item) => `<li>${linkedText(item)}</li>`).join("")}</ul>
       <a class="button-link" href="/print?${printQuery.toString()}">Print / Save as PDF</a>
     </section>
+
+    ${renderExemptionsSection()}
 
     ${warningList(payload.warnings)}
   `;

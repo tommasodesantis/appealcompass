@@ -1,6 +1,6 @@
 import {
   BOR_CALENDAR,
-  BOR_OFFICIAL_URL,
+  BOR_DATES_PDF_URL,
   CCAO_CALENDAR,
   CCAO_OFFICIAL_URL,
   type FilingWindow,
@@ -30,6 +30,9 @@ const DEFAULT_APPEAL_STATUS: AppealStatusInput = {
   borDecisionReceived: null,
   borDecisionDate: null,
 };
+
+const CERTIFICATE_OF_ERROR_EXPLANATION =
+  "A Certificate of Error is a Cook County process to fix past-year mistakes - like a missed exemption or wrong property facts - which can lead to a refund. Ask the Assessor's office about it.";
 
 function firstOpenOrUpcoming(
   windows: FilingWindow[],
@@ -146,7 +149,7 @@ export function routeCase(
         deadline: bor.deadline,
         daysRemaining: bor.days,
         warnings,
-        officialUrl: BOR_OFFICIAL_URL,
+        officialUrl: BOR_DATES_PDF_URL,
       };
     }
     return closedRoute([
@@ -230,7 +233,7 @@ export function routeCase(
       deadline: bor.deadline,
       daysRemaining: bor.days,
       warnings,
-      officialUrl: BOR_OFFICIAL_URL,
+      officialUrl: BOR_DATES_PDF_URL,
     };
   }
 
@@ -249,7 +252,7 @@ export function routeCase(
       reasoning: [
         "The Assessor is the first-level appeal and is free.",
         "Filing preserves the path to BOR, where Rule 15 may ask for Assessor documents.",
-        "Property-description errors and Certificates of Error start with the Assessor.",
+        `Property-description errors start with the Assessor. ${CERTIFICATE_OF_ERROR_EXPLANATION}`,
       ],
       actionStatus: assessorStatus,
       deadline: ccao.deadline,
@@ -278,13 +281,13 @@ export function routeCase(
       deadline: bor.deadline,
       daysRemaining: bor.days,
       warnings,
-      officialUrl: BOR_OFFICIAL_URL,
+      officialUrl: BOR_DATES_PDF_URL,
     };
   }
 
   return closedRoute([
     "Prepare evidence for the next township session.",
     "If you already received a BOR decision, answer the Step 1 BOR-decision question and enter the decision date so Appeal Compass can compute the PTAB deadline.",
-    "For prior-year factual errors or missed exemptions, evaluate Certificate of Error.",
+    CERTIFICATE_OF_ERROR_EXPLANATION,
   ]);
 }

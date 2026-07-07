@@ -4,7 +4,7 @@ import { NotFoundError } from "../domain/errors";
 import type { AssessmentHistoryRow, CaseFile, Comparable, Parcel, Sale } from "../domain/models";
 import { defaultUserEvidence } from "../domain/models";
 import { formatPin, normalizePin } from "../domain/pin";
-import type { JsonRecord, SocrataClient, SocrataResponse } from "./socrataClient";
+import type { JsonRecord, SocrataClient, SocrataResponse, SocrataWarning } from "./socrataClient";
 
 export interface CaseRepository {
   loadCaseByPin(pin: string): Promise<CaseFile>;
@@ -179,8 +179,29 @@ function parseSaleDate(value: unknown): string | null {
   return `${year}-${month?.padStart(2, "0")}-${day?.padStart(2, "0")}`;
 }
 
-function responseRows(response: SocrataResponse, warnings: string[]): JsonRecord[] {
-  warnings.push(...response.warnings);
+function logInternalWarning(pin: string, warning: SocrataWarning): void {
+  console.log(
+    JSON.stringify({
+      event: "appeal_compass.socrata_internal_warning",
+      pin: formatPin(pin),
+      dataset: warning.dataset,
+      message: warning.message,
+    }),
+  );
+}
+
+function collectSocrataWarnings(response: SocrataResponse, warnings: string[], pin: string): void {
+  for (const warning of response.warnings) {
+    if (warning.audience === "internal") {
+      logInternalWarning(pin, warning);
+      continue;
+    }
+    warnings.push(warning.message);
+  }
+}
+
+function responseRows(response: SocrataResponse, warnings: string[], pin: string): JsonRecord[] {
+  collectSocrataWarnings(response, warnings, pin);
   return response.rows;
 }
 
@@ -201,6 +222,7 @@ export class SocrataRepository implements CaseRepository {
         { maxRows: SUBJECT_MAX_ROWS },
       ),
       warnings,
+      normalized,
     );
     if (parcelRows.length === 0) {
       parcelRows = responseRows(
@@ -210,12 +232,13 @@ export class SocrataRepository implements CaseRepository {
           { maxRows: SUBJECT_MAX_ROWS },
         ),
         warnings,
+        normalized,
       );
       if (parcelRows.length > 0) {
         warnings.push(
-          `Parcel universe had no ${ASSESSMENT_YEAR} row; using latest available year ${
+          `We couldn't find ${ASSESSMENT_YEAR} parcel details for this property, so we're using the most recent available details (${
             rowYear(latestRow(parcelRows)) ?? "unknown"
-          }.`,
+          }). Double-check current property details at the official source.`,
         );
       }
     }
@@ -234,6 +257,7 @@ export class SocrataRepository implements CaseRepository {
         { maxRows: SUBJECT_MAX_ROWS },
       ),
       warnings,
+      normalized,
     );
     if (charRows.length === 0) {
       charRows = responseRows(
@@ -243,12 +267,13 @@ export class SocrataRepository implements CaseRepository {
           { maxRows: SUBJECT_MAX_ROWS },
         ),
         warnings,
+        normalized,
       );
       if (charRows.length > 0) {
         warnings.push(
-          `Residential characteristics had no ${ASSESSMENT_YEAR} row; using latest available year ${
+          `We couldn't find ${ASSESSMENT_YEAR} residential characteristics for this property, so we're using the most recent available characteristics (${
             rowYear(latestRow(charRows)) ?? "unknown"
-          }.`,
+          }). Double-check current property characteristics at the official source.`,
         );
       }
     }
@@ -266,6 +291,7 @@ export class SocrataRepository implements CaseRepository {
         { maxRows: SUBJECT_MAX_ROWS },
       ),
       warnings,
+      normalized,
     );
     if (avRows.length === 0) {
       avRows = responseRows(
@@ -275,12 +301,13 @@ export class SocrataRepository implements CaseRepository {
           { maxRows: SUBJECT_MAX_ROWS },
         ),
         warnings,
+        normalized,
       );
       if (avRows.length > 0) {
         warnings.push(
-          `Assessed values had no ${ASSESSMENT_YEAR} row; using latest available year ${
+          `We couldn't find ${ASSESSMENT_YEAR} assessment values for this property, so we're using the most recent available values (${
             rowYear(latestRow(avRows)) ?? "unknown"
-          }.`,
+          }). Double-check current values at the official source.`,
         );
       }
     }
@@ -293,13 +320,14 @@ export class SocrataRepository implements CaseRepository {
           { maxRows: SUBJECT_MAX_ROWS },
         ),
         warnings,
+        normalized,
       );
       [current, currentImprovement, currentYear] = latestAssessmentValues(avRows);
       if (current !== null || currentImprovement !== null) {
         warnings.push(
-          `Configured-year assessed-value row had no AV fields; using latest value-bearing year ${
+          `We found a ${ASSESSMENT_YEAR} assessment row, but it did not include usable assessed values, so we're using the most recent value-bearing year (${
             currentYear ?? "unknown"
-          }.`,
+          }). Double-check current values at the official source.`,
         );
       }
     }
@@ -354,6 +382,8 @@ export class SocrataRepository implements CaseRepository {
       { $select: SALES_SELECT, $where: `pin='${pin}'` },
       { maxRows: SUBJECT_MAX_ROWS },
     );
+    const warnings: string[] = [];
+    collectSocrataWarnings(response, warnings, pin);
     const sales = response.rows
       .map((row) => {
         const saleDate = parseSaleDate(pick(row, "sale_date"));
@@ -365,7 +395,7 @@ export class SocrataRepository implements CaseRepository {
       })
       .filter((sale): sale is Sale => sale !== null)
       .sort((a, b) => b.saleDate.localeCompare(a.saleDate));
-    return [sales, response.warnings];
+    return [sales, warnings];
   }
 
   private async loadComparables(parcel: Parcel): Promise<[Comparable[], string[]]> {
@@ -386,6 +416,7 @@ export class SocrataRepository implements CaseRepository {
         { maxRows: COMPARABLE_POOL_CAP },
       ),
       warnings,
+      parcel.pin,
     );
     if (chars.length === 0) {
       chars = responseRows(
@@ -395,10 +426,11 @@ export class SocrataRepository implements CaseRepository {
           { maxRows: COMPARABLE_POOL_CAP },
         ),
         warnings,
+        parcel.pin,
       );
       if (chars.length > 0) {
         warnings.push(
-          "Comparable characteristics had no configured-year rows; using latest available rows from the source.",
+          `We couldn't find ${ASSESSMENT_YEAR} comparable characteristics for this township/class, so we're using the most recent available comparable characteristics. Double-check current comparable property details at the official source.`,
         );
       }
     }
@@ -410,6 +442,7 @@ export class SocrataRepository implements CaseRepository {
         { maxRows: COMPARABLE_POOL_CAP },
       ),
       warnings,
+      parcel.pin,
     );
     if (avs.length > 0 && !avs.some(hasAssessmentValue)) {
       const priorYear = ASSESSMENT_YEAR - 1;
@@ -418,11 +451,11 @@ export class SocrataRepository implements CaseRepository {
         { $select: AV_SELECT, $where: `${where} AND year='${priorYear}'` },
         { maxRows: COMPARABLE_POOL_CAP },
       );
-      warnings.push(...priorResponse.warnings);
+      collectSocrataWarnings(priorResponse, warnings, parcel.pin);
       if (priorResponse.rows.length > 0) {
         avs = priorResponse.rows;
         warnings.push(
-          `Comparable assessed-value rows for the configured year had no AV fields; using latest value-bearing rows from ${priorYear}.`,
+          `We found ${ASSESSMENT_YEAR} comparable assessment rows, but they did not include usable assessed values, so we're using ${priorYear} value-bearing rows. Double-check current comparable values at the official source.`,
         );
       }
     }
@@ -434,10 +467,11 @@ export class SocrataRepository implements CaseRepository {
           { maxRows: COMPARABLE_POOL_CAP },
         ),
         warnings,
+        parcel.pin,
       );
       if (avs.length > 0) {
         warnings.push(
-          "Comparable assessed values had no configured-year rows; using latest available rows from the source.",
+          `We couldn't find ${ASSESSMENT_YEAR} comparable assessment values for this township/class, so we're using the most recent available comparable values. Double-check current comparable values at the official source.`,
         );
       }
     }
@@ -449,6 +483,7 @@ export class SocrataRepository implements CaseRepository {
         { maxRows: COMPARABLE_POOL_CAP },
       ),
       warnings,
+      parcel.pin,
     );
     if (universeRows.length === 0) {
       universeRows = responseRows(
@@ -458,10 +493,11 @@ export class SocrataRepository implements CaseRepository {
           { maxRows: COMPARABLE_POOL_CAP },
         ),
         warnings,
+        parcel.pin,
       );
       if (universeRows.length > 0) {
         warnings.push(
-          "Comparable parcel-universe rows had no configured-year rows; using latest available rows from the source.",
+          `We couldn't find ${ASSESSMENT_YEAR} comparable parcel details for this township/class, so we're using the most recent available comparable parcel details. Double-check current comparable property details at the official source.`,
         );
       }
     }

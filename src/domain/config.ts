@@ -8,10 +8,12 @@ export const ASSESSMENT_LEVEL = 0.1;
 
 export const CCAO_OFFICIAL_URL =
   "https://www.cookcountyassessoril.gov/assessment-calendar-and-deadlines";
+export const CCAO_EXEMPTIONS_URL = "https://www.cookcountyassessoril.gov/exemptions";
 export const BOR_OFFICIAL_URL = "https://www.cookcountyboardofreview.com/";
 export const BOR_PORTAL_URL = "https://appeals.cookcountyboardofreview.com/";
 export const BOR_DATES_PDF_URL =
   "https://www.cookcountyboardofreview.com/sites/g/files/ywwepo261/files/document/file/2025-07/2025TOWNSHIPOPEN-CLOSE.pdf";
+export const COOK_PROPERTY_TAX_PORTAL_URL = "https://www.cookcountypropertyinfo.com/";
 export const PTAB_OFFICIAL_URL = "https://ptab.illinois.gov/";
 export const PTAB_EFILE_URL = "https://ptab.illinois.gov/";
 export const SUPPORTED_JURISDICTIONS: Record<Jurisdiction, string> = {

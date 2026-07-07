@@ -1,4 +1,9 @@
-import { ASSESSMENT_LEVEL, NOT_LEGAL_ADVICE } from "../domain/config";
+import {
+  ASSESSMENT_LEVEL,
+  CCAO_EXEMPTIONS_URL,
+  COOK_PROPERTY_TAX_PORTAL_URL,
+  NOT_LEGAL_ADVICE,
+} from "../domain/config";
 import type { Parcel } from "../domain/models";
 import type { CasePayload } from "./casePayload";
 
@@ -16,6 +21,27 @@ function escapeHtml(value: unknown): string {
     .replace(/"/g, "&quot;");
 }
 
+function linkedText(value: unknown): string {
+  const text = String(value ?? "");
+  const pattern = /https?:\/\/[^\s<>"']+/g;
+  let rendered = "";
+  let lastIndex = 0;
+  for (const match of text.matchAll(pattern)) {
+    const rawUrl = match[0];
+    const start = match.index ?? 0;
+    const trailing = rawUrl.match(/[.,;:)]+$/)?.[0] ?? "";
+    const url = rawUrl.slice(0, rawUrl.length - trailing.length);
+    rendered += escapeHtml(text.slice(lastIndex, start));
+    rendered += `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>${escapeHtml(trailing)}`;
+    lastIndex = start + rawUrl.length;
+  }
+  return rendered + escapeHtml(text.slice(lastIndex));
+}
+
+function linkedSource(url: string, label: string): string {
+  return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
+}
+
 function dollars(value: number | null): string {
   return value === null || Number.isNaN(value) ? "Not available" : money.format(value);
 }
@@ -31,7 +57,7 @@ function list(items: string[]): string {
   if (items.length === 0) {
     return "<p>None.</p>";
   }
-  return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  return `<ul>${items.map((item) => `<li>${linkedText(item)}</li>`).join("")}</ul>`;
 }
 
 function githubLogo(): string {
@@ -226,8 +252,9 @@ export function buildPrintReport(payload: CasePayload): string {
 
       <section class="packet-section">
         <h2>Exemptions and Certificate of Error Screen</h2>
-        <p>Check Homeowner, Senior, Senior Freeze, Disability, Veterans, and other exemptions. Missed past-year exemptions or factual errors may be recoverable through Certificate of Error.</p>
-        <p>Verify exemptions at the Cook County Assessor official source.</p>
+        <p>Exemptions are fixed reductions in taxable value for owner-occupants, seniors, veterans, people with disabilities, and some other homeowners. They can be worth more than an appeal.</p>
+        <p>Check exemptions at the ${linkedSource(CCAO_EXEMPTIONS_URL, "Cook County Assessor exemptions page")} and the ${linkedSource(COOK_PROPERTY_TAX_PORTAL_URL, "Cook County Property Tax Portal")}. Bring documentation for any missing or incorrect exemption.</p>
+        <p>A Certificate of Error is a Cook County process to fix past-year mistakes - like a missed exemption or wrong property facts - which can lead to a refund. Ask the Assessor's office about it.</p>
       </section>
 
       ${

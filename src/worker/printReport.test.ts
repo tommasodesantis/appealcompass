@@ -28,8 +28,12 @@ test("print route renders required Assessor packet sections", async () => {
   expect(html).toContain("Assessor Filing Instructions");
   expect(html).toContain("Assessor Checklist");
   expect(html).toContain("Exemptions and Certificate of Error Screen");
+  expect(html).toContain("fixed reductions in taxable value");
+  expect(html).toContain("Cook County Assessor exemptions page");
+  expect(html).toContain("A Certificate of Error is a Cook County process");
   expect(html).toContain("NOT LEGAL ADVICE");
   expect(html).toContain("Verify at the official source before filing");
+  expect(html).not.toContain("Socrata pagination");
   expect(html).toContain("Print / Save as PDF");
   expectNoBannedText(html);
 });
@@ -53,5 +57,6 @@ test("print route labels user-supplied subject values", async () => {
   expect(html).toContain("user-supplied; documentation required");
   expect(html).toContain("Building / improvement assessed value");
   expect(html).toContain("BOR Filing Instructions");
+  expect(html).toContain("2025TOWNSHIPOPEN-CLOSE.pdf");
   expectNoBannedText(html);
 });

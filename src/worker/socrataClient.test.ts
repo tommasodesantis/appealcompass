@@ -24,7 +24,12 @@ test("SocrataClient paginates and reuses cache", async () => {
   const first = await client.fetchAll("parcel_universe", { $where: "pin='x'" });
   expect(first.rows.map((row) => row.row)).toEqual([1, 2, 3]);
   expect(first.warnings).toEqual([
-    "Socrata pagination fetched 3 rows for parcel_universe; all available pages were requested.",
+    {
+      audience: "internal",
+      dataset: "parcel_universe",
+      message:
+        "Socrata pagination fetched 3 rows for parcel_universe; all available pages were requested.",
+    },
   ]);
   expect(calls).toHaveLength(2);
 

@@ -1,6 +1,14 @@
 import { SocrataRepository } from "./repository";
 import type { SocrataResponse } from "./socrataClient";
 
+function internalWarning(message: string): SocrataResponse["warnings"][number] {
+  return {
+    audience: "internal",
+    dataset: "parcel_universe",
+    message,
+  };
+}
+
 class MissingAddressClient {
   async fetchAll(datasetKey: string, params: Record<string, string>): Promise<SocrataResponse> {
     const where = params.$where ?? "";
@@ -15,7 +23,7 @@ class MissingAddressClient {
             year: "2026",
           },
         ],
-        warnings: ["parcel pagination warning"],
+        warnings: [internalWarning("parcel pagination warning")],
       };
     }
     if (datasetKey === "res_characteristics" && where.includes("pin='03000000000001'")) {
@@ -38,13 +46,21 @@ class MissingAddressClient {
   }
 }
 
-test("SocrataRepository surfaces missing live fields", async () => {
+test("SocrataRepository filters internal Socrata warnings and surfaces missing live fields", async () => {
+  const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   const repo = new SocrataRepository(new MissingAddressClient() as never);
-  const caseFile = await repo.loadCaseByPin("03-00-000-000-0001");
-  const warnings = caseFile.dataWarnings.join("\n");
-  expect(warnings).toContain("parcel pagination warning");
-  expect(warnings).toContain("Residential characteristics were unavailable");
-  expect(warnings).toContain("Current assessed value was unavailable");
+  try {
+    const caseFile = await repo.loadCaseByPin("03-00-000-000-0001");
+    const warnings = caseFile.dataWarnings.join("\n");
+    expect(warnings).not.toContain("parcel pagination warning");
+    expect(warnings).toContain("Residential characteristics were unavailable");
+    expect(warnings).toContain("Current assessed value was unavailable");
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("appeal_compass.socrata_internal_warning"),
+    );
+  } finally {
+    logSpy.mockRestore();
+  }
 });
 
 class EnrichedComparableClient {

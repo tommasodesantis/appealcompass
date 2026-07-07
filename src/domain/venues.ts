@@ -1,5 +1,6 @@
 import {
   ASSESSMENT_YEAR,
+  BOR_OFFICIAL_URL,
   BOR_PORTAL_URL,
   CCAO_OFFICIAL_URL,
   PTAB_EFILE_URL,
@@ -16,6 +17,8 @@ import type {
 
 const OTHER_POSSIBLE_FACTORS =
   "Other possible appeal factors: condition issues, vacancy, demolition, and exemption-related statuses such as senior, disability, or veteran status can be raised directly with the venue when you have documentation.";
+const CERTIFICATE_OF_ERROR_EXPLANATION =
+  "A Certificate of Error is a Cook County process to fix past-year mistakes - like a missed exemption or wrong property facts - which can lead to a refund. Ask the Assessor's office about it.";
 
 export interface VenueAdapter {
   venueKey: ResolvedVenue;
@@ -35,7 +38,7 @@ class AssessorAdapter implements VenueAdapter {
       "File during the township Assessor appeal window; verify at the official source.",
       "Attach comparable, sale, appraisal, condition, and factual-error evidence.",
       "If filing later at BOR, save the Assessor appeal confirmation and documents.",
-      "For prior-year factual errors or missed exemptions, ask about Certificate of Error.",
+      CERTIFICATE_OF_ERROR_EXPLANATION,
       OTHER_POSSIBLE_FACTORS,
     ];
     if (caseFile.userEvidence.actualSqft) {
@@ -65,7 +68,7 @@ class AssessorAdapter implements VenueAdapter {
 class BoardOfReviewAdapter implements VenueAdapter {
   venueKey = "bor" as const;
   venueName = "Cook County Board of Review Appeal";
-  officialUrl = "https://www.cookcountyboardofreview.com/";
+  officialUrl = BOR_OFFICIAL_URL;
 
   checklist(caseFile: CaseFile): string[] {
     const items = [
@@ -156,10 +159,10 @@ class ClosedSessionAdapter implements VenueAdapter {
 
   checklist(): string[] {
     return [
-      "Verify whether any Assessor or BOR window has reopened or been corrected.",
-      "Prepare comparable, sale, appraisal, condition, and factual-error evidence.",
+      "Double check appeal deadlines, info might have been updated or corrected.",
+      "Double-check the tool-generated information and add evidence Appeal Compass cannot provide, such as photos, property record cards, appraisals, and condition documentation.",
       "If you already received a BOR decision, answer the Step 1 BOR-decision question and enter the decision date so Appeal Compass can compute the PTAB deadline.",
-      "For prior-year factual errors or missed exemptions, ask about Certificate of Error.",
+      CERTIFICATE_OF_ERROR_EXPLANATION,
       "Check exemptions now; exemptions may be worth more than an assessment appeal.",
       OTHER_POSSIBLE_FACTORS,
     ];
@@ -171,7 +174,7 @@ class ClosedSessionAdapter implements VenueAdapter {
         title: "Closed-Window Preparation Instructions",
         lines: [
           "No configured current-year CCAO or BOR filing window is actionable.",
-          "Use this for preparation, PTAB screening, and Certificate of Error review.",
+          `Use this for preparation and PTAB screening. ${CERTIFICATE_OF_ERROR_EXPLANATION}`,
           "Do not file this as a BOR packet unless BOR shows a valid window.",
           `Official source: ${this.officialUrl}`,
         ],

@@ -13,10 +13,17 @@ export const DATASETS = {
 
 export type DatasetKey = keyof typeof DATASETS;
 export type JsonRecord = Record<string, JsonValue>;
+export type WarningAudience = "user" | "internal";
+
+export interface SocrataWarning {
+  audience: WarningAudience;
+  dataset: string;
+  message: string;
+}
 
 export interface SocrataResponse {
   rows: JsonRecord[];
-  warnings: string[];
+  warnings: SocrataWarning[];
 }
 
 export interface SocrataClientOptions {
@@ -45,6 +52,14 @@ function normalizeParams(params: Record<string, string>): Record<string, string>
 
 function cacheKey(datasetKey: string, params: Record<string, string>): string {
   return JSON.stringify({ dataset: datasetKey, params: normalizeParams(params) });
+}
+
+function internalWarning(datasetKey: string, message: string): SocrataWarning {
+  return {
+    audience: "internal",
+    dataset: datasetKey,
+    message,
+  };
 }
 
 function rowsFromUnknown(data: unknown, datasetKey: string): JsonRecord[] {
@@ -109,7 +124,7 @@ export class SocrataClient {
     }
 
     const rows: JsonRecord[] = [];
-    const warnings: string[] = [];
+    const warnings: SocrataWarning[] = [];
     let offset = 0;
     let paginated = false;
     while (true) {
@@ -119,7 +134,10 @@ export class SocrataClient {
           : Math.min(this.pageSize, options.maxRows - rows.length);
       if (remaining <= 0) {
         warnings.push(
-          `Socrata row cap reached for ${datasetKey}; additional upstream rows were not requested.`,
+          internalWarning(
+            datasetKey,
+            `Socrata row cap reached for ${datasetKey}; additional upstream rows were not requested.`,
+          ),
         );
         break;
       }
@@ -138,7 +156,10 @@ export class SocrataClient {
     }
     if (paginated) {
       warnings.push(
-        `Socrata pagination fetched ${rows.length.toLocaleString("en-US")} rows for ${datasetKey}; all available pages were requested.`,
+        internalWarning(
+          datasetKey,
+          `Socrata pagination fetched ${rows.length.toLocaleString("en-US")} rows for ${datasetKey}; all available pages were requested.`,
+        ),
       );
     }
     return { rows, warnings };
