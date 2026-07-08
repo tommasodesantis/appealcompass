@@ -220,6 +220,12 @@ fieldset {
   padding: 1rem;
 }
 
+.question-group {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
 legend {
   padding: 0 0.25rem;
   color: #704611;
@@ -244,10 +250,10 @@ legend {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.55rem 0.8rem;
-  background: #fff;
+  border: 0;
+  border-radius: 0;
+  padding: 0.45rem 0.65rem 0.45rem 0;
+  background: transparent;
 }
 
 .choice-row input {
@@ -352,15 +358,23 @@ summary {
 }
 
 .tooltip-toggle {
-  width: 2.75rem;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
+  position: relative;
+  width: 1.45rem;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  min-height: 1.45rem;
   border-color: #9eb2aa;
   background: #fff;
   color: var(--accent);
   padding: 0;
-  font-size: 0.9rem;
+  font-size: 0.76rem;
   line-height: 1;
+}
+
+.tooltip-toggle::before {
+  content: "";
+  position: absolute;
+  inset: -0.65rem;
 }
 
 .tooltip-toggle[aria-expanded="true"] {
@@ -562,6 +576,11 @@ th {
     width: 100%;
   }
 
+  .tooltip-toggle {
+    width: 1.45rem;
+    min-width: 1.45rem;
+  }
+
   .site-footer,
   .site-footer a {
     align-items: flex-start;
@@ -573,8 +592,9 @@ th {
   }
 
   .tooltip-bubble {
-    right: 0;
-    left: auto;
+    right: 1rem;
+    left: 1rem;
+    width: auto;
     transform: none;
   }
 }

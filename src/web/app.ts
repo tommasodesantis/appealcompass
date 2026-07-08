@@ -605,7 +605,7 @@ function renderComparables(payload: CasePayload): string {
   );
   const comparableNote =
     comps.status === "ok"
-      ? `<p>Comparable analysis completed with the ${escapeHtml(comps.profileLabel)} profile ${profileTooltip} using ${escapeHtml(comps.metricLabel)} per square foot.</p>`
+      ? `<p>Comparable analysis completed with the ${escapeHtml(comps.profileLabel)} profile using ${escapeHtml(comps.metricLabel)} per square foot. ${profileTooltip}</p>`
       : `<p>${escapeHtml(comps.note)}</p>`;
   const rows = comps.exhibit
     .map((exhibit) => {
@@ -633,10 +633,12 @@ function renderComparables(payload: CasePayload): string {
   return `<section class="panel" aria-labelledby="step-four">
     <div class="step-label">Step 4</div>
     <h2 id="step-four">Evidence summary</h2>
-    <p class="metric-line"><strong>Tier:</strong> ${escapeHtml(payload.evidence.tier)} ${infoTooltip(
+    <p class="metric-line"><strong>Tier:</strong> ${escapeHtml(payload.evidence.tier)}. ${escapeHtml(
+      payload.evidence.tierMessage,
+    )} ${infoTooltip(
       "What tier means",
       "The tier is a rough screen of how much public data supports spending time on an appeal.",
-    )}. ${escapeHtml(payload.evidence.tierMessage)}</p>
+    )}</p>
     ${comparableNote}
     <p><strong>Pool:</strong> ${numberText(comps.poolSize)} similar homes, ${escapeHtml(
       comps.scope ?? "no scope",
@@ -857,8 +859,25 @@ function closeTooltips(except: HTMLButtonElement | null = null): void {
     button.setAttribute("aria-expanded", "false");
     if (bubble) {
       bubble.hidden = true;
+      bubble.removeAttribute("style");
     }
   }
+}
+
+function positionTooltip(button: HTMLButtonElement, bubble: HTMLElement): void {
+  bubble.removeAttribute("style");
+  if (!window.matchMedia("(max-width: 760px)").matches) {
+    return;
+  }
+  const rect = button.getBoundingClientRect();
+  const viewportPadding = 16;
+  const preferredTop = rect.bottom + 8;
+  const maxTop = window.innerHeight - bubble.offsetHeight - viewportPadding;
+  const top = Math.max(viewportPadding, Math.min(preferredTop, maxTop));
+  bubble.style.position = "fixed";
+  bubble.style.inset = `${top}px ${viewportPadding}px auto ${viewportPadding}px`;
+  bubble.style.width = "auto";
+  bubble.style.transform = "none";
 }
 
 function toggleTooltip(button: HTMLButtonElement): void {
@@ -871,6 +890,11 @@ function toggleTooltip(button: HTMLButtonElement): void {
   closeTooltips(willOpen ? button : null);
   button.setAttribute("aria-expanded", String(willOpen));
   bubble.hidden = !willOpen;
+  if (willOpen) {
+    positionTooltip(button, bubble);
+  } else {
+    bubble.removeAttribute("style");
+  }
 }
 
 function downloadComparableWorkbook(): void {
