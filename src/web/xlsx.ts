@@ -227,7 +227,7 @@ function rowsForPayload(payload: WorkbookPayload): RowInput[] {
     [],
     [{ value: "Analysis Stats", style: 1 }],
     ["Pool size", comps.poolSize],
-    ["Median metric/sqft", comps.medianAvPerSqft],
+    ["Median assessment $/sqft", comps.medianAvPerSqft],
     ["Percentile", comps.percentile],
     ["Gap %", comps.gapPct],
     [],

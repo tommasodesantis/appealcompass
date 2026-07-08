@@ -70,6 +70,7 @@ test("buildComparableWorkbook creates a real XLSX with expected exhibit sections
   expect(sheet).toContain("Assessment $/sqft");
   expect(sheet).toContain("Similarity score");
   expect(sheet).toContain("Analysis Stats");
+  expect(sheet).toContain("Median assessment $/sqft");
   expect(sheet).toContain("Savings Calculation");
   expect(sheet).toContain("State equalizer");
   expect(sheet).toContain("Tax rate source");
