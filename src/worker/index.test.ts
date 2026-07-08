@@ -155,7 +155,7 @@ test("case endpoint refuses entity-owned properties before assessment", async ()
     error: {
       kind: "input",
       message:
-        "Appeal Compass is designed only for individual residential homeowners appealing their own home; entity-owned, commercial, and association properties are not supported and generally require an attorney.",
+        "Appeal Compass is designed only for individual residential homeowners appealing their own home; if interested in a similar tool for commercial properties please reach out here.",
     },
   });
 });
@@ -181,6 +181,17 @@ test("public demo endpoint is removed", async () => {
 
 function reportRequest(ip: string, body: Record<string, unknown>): Request {
   return new Request("http://example.test/api/report", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "cf-connecting-ip": ip,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function contactRequest(ip: string, body: Record<string, unknown>): Request {
+  return new Request("http://example.test/api/contact", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -276,6 +287,118 @@ test("report endpoint returns friendly error when GitHub issue creation fails", 
       ok: false,
       error: { kind: "github" },
     });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("contact endpoint verifies Turnstile and sends sanitized Resend email", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("turnstile")) {
+      return Response.json({ success: true });
+    }
+    if (url.includes("api.resend.com")) {
+      expect(init?.headers).toMatchObject({ authorization: "Bearer resend-secret" });
+      const body = String(init?.body ?? "");
+      expect(body).toContain("Commercial Owner");
+      expect(body).toContain("owner@example.com");
+      expect(body).toContain("Need a commercial appeal tool");
+      expect(body).not.toContain("<b>");
+      expect(body).not.toContain("contact-token");
+      return Response.json({ id: "email_123" }, { status: 200 });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      contactRequest("10.0.1.1", {
+        name: "<b>Commercial Owner</b>",
+        email: "owner@example.com",
+        message: "<b>Need a commercial appeal tool</b>",
+        turnstileToken: "contact-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", RESEND_API_KEY: "resend-secret" },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      message: "Message sent.",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("contact endpoint rejects failed Turnstile verification", async () => {
+  const fetchMock = vi.fn(async () => Response.json({ success: false }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      contactRequest("10.0.1.2", {
+        message: "Please contact me",
+        turnstileToken: "bad-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", RESEND_API_KEY: "resend-secret" },
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "turnstile" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("contact endpoint returns friendly error when Resend fails", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("turnstile")) {
+      return Response.json({ success: true });
+    }
+    return Response.json({ message: "server error" }, { status: 500 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      contactRequest("10.0.1.3", {
+        message: "Please contact me",
+        turnstileToken: "ok-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", RESEND_API_KEY: "resend-secret" },
+    );
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "resend" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("contact endpoint returns friendly error when secrets are missing", async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      contactRequest("10.0.1.4", {
+        message: "Please contact me",
+        turnstileToken: "ok-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret" },
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "configuration", message: "Contact form is not configured yet." },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   } finally {
     vi.unstubAllGlobals();
   }

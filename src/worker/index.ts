@@ -15,6 +15,7 @@ export interface Env {
   SOCRATA_APP_TOKEN?: string;
   TURNSTILE_SECRET_KEY?: string;
   GITHUB_ISSUES_TOKEN?: string;
+  RESEND_API_KEY?: string;
 }
 
 const ASSESSMENT_CONCURRENCY = 4;
@@ -22,6 +23,8 @@ const ASSESSMENT_QUEUE_TIMEOUT_MS = 60_000;
 const REPORT_PAYLOAD_LIMIT = 10_000;
 const REPORT_RATE_LIMIT = 5;
 const REPORT_RATE_WINDOW_MS = 60 * 60 * 1000;
+const CONTACT_RECIPIENT = "tommaso.desantis@mail.com";
+const RESEND_EMAILS_URL = "https://api.resend.com/emails";
 const QUEUE_TIMEOUT_MESSAGE =
   "Appeal Compass is busy helping other homeowners right now. Your assessment did not start within a minute. Please try again in a moment.";
 const sharedAssessmentLimiter = new ConcurrencyLimiter(ASSESSMENT_CONCURRENCY);
@@ -111,6 +114,22 @@ async function reportJson(request: Request): Promise<Record<string, unknown>> {
   return parsed as Record<string, unknown>;
 }
 
+async function contactJson(request: Request): Promise<Record<string, unknown>> {
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > REPORT_PAYLOAD_LIMIT) {
+    throw new UserInputError("Contact message is too large.");
+  }
+  const text = await request.text();
+  if (text.length > REPORT_PAYLOAD_LIMIT) {
+    throw new UserInputError("Contact message is too large.");
+  }
+  const parsed = JSON.parse(text) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new UserInputError("Contact payload is invalid.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 async function verifyTurnstile(token: string, request: Request, secret: string): Promise<boolean> {
   const form = new FormData();
   form.set("secret", secret);
@@ -163,6 +182,44 @@ async function createGithubIssue(input: {
   }
   const result = (await response.json().catch(() => ({}))) as { html_url?: string };
   return result.html_url ?? null;
+}
+
+function validOptionalEmail(email: string): boolean {
+  return email === "" || /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email);
+}
+
+async function sendContactEmail(input: {
+  token: string;
+  name: string;
+  email: string;
+  message: string;
+}): Promise<boolean> {
+  const body: Record<string, unknown> = {
+    from: "Appeal Compass <onboarding@resend.dev>",
+    to: [CONTACT_RECIPIENT],
+    subject: "Appeal Compass commercial-property inquiry",
+    text: [
+      "Submitted through the Appeal Compass commercial-interest contact form.",
+      "",
+      `Name: ${input.name || "Not provided"}`,
+      `Email: ${input.email || "Not provided"}`,
+      "",
+      "Message:",
+      input.message,
+    ].join("\n"),
+  };
+  if (input.email) {
+    body.reply_to = input.email;
+  }
+  const response = await fetch(RESEND_EMAILS_URL, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${input.token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  return response.ok;
 }
 
 function cacheStore() {
@@ -301,6 +358,91 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
   return json({ ok: true, issueUrl });
 }
 
+async function handleContact(request: Request, env: Env): Promise<Response> {
+  if (!env.TURNSTILE_SECRET_KEY || !env.RESEND_API_KEY) {
+    return json(
+      {
+        ok: false,
+        error: {
+          kind: "configuration",
+          message: "Contact form is not configured yet.",
+        },
+      },
+      503,
+    );
+  }
+  if (isRateLimited(request)) {
+    return json(
+      {
+        ok: false,
+        error: {
+          kind: "rate_limited",
+          message: "Too many contact messages from this connection. Try again later.",
+        },
+      },
+      429,
+    );
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await contactJson(request);
+  } catch (error) {
+    return errorResponse(error);
+  }
+
+  const name = sanitizeText(payload.name, 120);
+  const email = sanitizeText(payload.email, 254);
+  const message = sanitizeText(payload.message, 4000);
+  const turnstileToken = sanitizeText(payload.turnstileToken, 2048);
+  if (!message) {
+    return json({ ok: false, error: { kind: "input", message: "Write a message." } }, 400);
+  }
+  if (!validOptionalEmail(email)) {
+    return json(
+      {
+        ok: false,
+        error: { kind: "input", message: "Enter a valid email address or leave it blank." },
+      },
+      400,
+    );
+  }
+  if (!turnstileToken) {
+    return json(
+      { ok: false, error: { kind: "input", message: "Complete the verification challenge." } },
+      400,
+    );
+  }
+
+  const turnstileOk = await verifyTurnstile(turnstileToken, request, env.TURNSTILE_SECRET_KEY);
+  if (!turnstileOk) {
+    return json(
+      { ok: false, error: { kind: "turnstile", message: "Verification failed. Try again." } },
+      400,
+    );
+  }
+
+  const sent = await sendContactEmail({
+    token: env.RESEND_API_KEY,
+    name,
+    email,
+    message,
+  });
+  if (!sent) {
+    return json(
+      {
+        ok: false,
+        error: {
+          kind: "resend",
+          message: "The message could not be sent right now. Try again later.",
+        },
+      },
+      502,
+    );
+  }
+  return json({ ok: true, message: "Message sent." });
+}
+
 export function createWorker(options: WorkerOptions = {}): WorkerHandler {
   const assessmentLimiter = options.assessmentLimiter ?? sharedAssessmentLimiter;
   const queueTimeoutMs = options.queueTimeoutMs ?? ASSESSMENT_QUEUE_TIMEOUT_MS;
@@ -340,6 +482,16 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
           );
         }
         return handleReport(request, env);
+      }
+
+      if (url.pathname === "/api/contact") {
+        if (request.method !== "POST") {
+          return json(
+            { ok: false, error: { kind: "method", message: "Use POST for contact messages." } },
+            405,
+          );
+        }
+        return handleContact(request, env);
       }
 
       if (url.pathname === "/api/case") {

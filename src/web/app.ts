@@ -154,12 +154,14 @@ const money = new Intl.NumberFormat("en-US", {
 });
 
 const ENTITY_REFUSAL_MESSAGE =
-  "Appeal Compass is designed only for individual residential homeowners appealing their own home; entity-owned, commercial, and association properties are not supported and generally require an attorney.";
+  "Appeal Compass is designed only for individual residential homeowners appealing their own home; if interested in a similar tool for commercial properties please reach out here.";
 const QUEUED_MESSAGE =
   "Appeal Compass is busy helping other homeowners right now. You're in line — keep this page open and your assessment will start automatically.";
 const CCAO_EXEMPTIONS_URL = "https://www.cookcountyassessoril.gov/exemptions";
 const COOK_PROPERTY_TAX_PORTAL_URL = "https://www.cookcountypropertyinfo.com/";
-const REPORTING_ENABLED = TURNSTILE_SITE_KEY.length > 0;
+const TURNSTILE_ENABLED = TURNSTILE_SITE_KEY.length > 0;
+const REPORTING_ENABLED = TURNSTILE_ENABLED;
+const CONTACT_ENABLED = TURNSTILE_ENABLED;
 let tooltipCounter = 0;
 let lastCasePayload: CasePayload | null = null;
 
@@ -465,6 +467,50 @@ function reportPanel(): string {
   </section>`;
 }
 
+function entityRefusalPanel(): string {
+  const linkedMessage = escapeHtml(ENTITY_REFUSAL_MESSAGE).replace(
+    "here.",
+    '<a href="#contact-panel" id="open-contact-from-refusal">here</a>.',
+  );
+  return `<section id="entity-refusal-panel" class="modal-panel" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="entity-refusal-title">
+      <button type="button" id="close-entity-refusal" class="secondary close-button">Close</button>
+      <h2 id="entity-refusal-title">Residential homeowners only</h2>
+      <p>${linkedMessage}</p>
+    </div>
+  </section>`;
+}
+
+function contactPanel(): string {
+  const disabled = CONTACT_ENABLED ? "" : " disabled";
+  const turnstile = CONTACT_ENABLED
+    ? `<div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}"></div>`
+    : '<p class="hint">Contact is disabled until the Turnstile site key is configured.</p>';
+  return `<section id="contact-panel" class="modal-panel" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="contact-title">
+      <button type="button" id="close-contact" class="secondary close-button">Close</button>
+      <h2 id="contact-title">Commercial-property interest</h2>
+      <form id="contact-form" class="stack">
+        <label>
+          <span>Name (optional)</span>
+          <input name="name" maxlength="120"${disabled}>
+        </label>
+        <label>
+          <span>Email (optional)</span>
+          <input name="email" type="email" maxlength="254"${disabled}>
+        </label>
+        <label>
+          <span>Message</span>
+          <textarea name="message" rows="5" maxlength="4000" required${disabled}></textarea>
+        </label>
+        ${turnstile}
+        <div id="contact-status" aria-live="polite"></div>
+        <button type="submit"${disabled}>Send message</button>
+      </form>
+    </div>
+  </section>`;
+}
+
 function startProgress(initialMessage: string | null = null): () => void {
   const steps = initialMessage
     ? [initialMessage]
@@ -633,6 +679,8 @@ function shell(): void {
     <div id="results"></div>
     ${siteFooter()}
     ${reportPanel()}
+    ${entityRefusalPanel()}
+    ${contactPanel()}
   `;
 }
 
@@ -648,6 +696,16 @@ function setFormError(message: string): void {
 
 function setReportStatus(message: string, error = false): void {
   const target = document.querySelector<HTMLElement>("#report-status");
+  if (!target) {
+    return;
+  }
+  target.innerHTML = message
+    ? `<p class="${error ? "error inline-error" : "notice inline-error"}">${escapeHtml(message)}</p>`
+    : "";
+}
+
+function setContactStatus(message: string, error = false): void {
+  const target = document.querySelector<HTMLElement>("#contact-status");
   if (!target) {
     return;
   }
@@ -678,6 +736,44 @@ function openReportPanel(): void {
 
 function closeReportPanel(): void {
   const panel = document.querySelector<HTMLElement>("#report-panel");
+  if (panel) {
+    panel.hidden = true;
+  }
+}
+
+function openEntityRefusalPanel(): void {
+  const panel = document.querySelector<HTMLElement>("#entity-refusal-panel");
+  if (!panel) {
+    return;
+  }
+  panel.hidden = false;
+  const firstField = panel.querySelector<HTMLElement>("a, button");
+  firstField?.focus();
+}
+
+function closeEntityRefusalPanel(): void {
+  const panel = document.querySelector<HTMLElement>("#entity-refusal-panel");
+  if (panel) {
+    panel.hidden = true;
+  }
+}
+
+function openContactPanel(): void {
+  const panel = document.querySelector<HTMLElement>("#contact-panel");
+  if (!panel) {
+    return;
+  }
+  setContactStatus(
+    CONTACT_ENABLED ? "" : "Contact is disabled until the Turnstile site key is configured.",
+    true,
+  );
+  panel.hidden = false;
+  const firstField = panel.querySelector<HTMLElement>("input, textarea, button");
+  firstField?.focus();
+}
+
+function closeContactPanel(): void {
+  const panel = document.querySelector<HTMLElement>("#contact-panel");
   if (panel) {
     panel.hidden = true;
   }
@@ -733,7 +829,7 @@ function validateStepOne(form: HTMLFormElement): boolean {
     return false;
   }
   if (formValue(form, "ownershipType") !== "individual") {
-    setFormError(ENTITY_REFUSAL_MESSAGE);
+    openEntityRefusalPanel();
     return false;
   }
   return true;
@@ -1072,6 +1168,43 @@ async function submitReport(form: HTMLFormElement): Promise<void> {
   form.reset();
 }
 
+async function submitContact(form: HTMLFormElement): Promise<void> {
+  if (!CONTACT_ENABLED) {
+    setContactStatus("Contact is disabled until the Turnstile site key is configured.", true);
+    return;
+  }
+  if (!form.reportValidity()) {
+    return;
+  }
+  const data = new FormData(form);
+  const turnstileToken = data.get("cf-turnstile-response");
+  setContactStatus("Sending message...");
+  const response = await fetch("/api/contact", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: data.get("name"),
+      email: data.get("email"),
+      message: data.get("message"),
+      turnstileToken: typeof turnstileToken === "string" ? turnstileToken : "",
+    }),
+  });
+  const result = (await response.json()) as
+    | { ok: true; message?: string }
+    | { ok: false; error?: { message?: string } };
+  if (!response.ok || !result.ok) {
+    setContactStatus(
+      result.ok
+        ? "The message could not be sent."
+        : (result.error?.message ?? "The message could not be sent."),
+      true,
+    );
+    return;
+  }
+  setContactStatus(result.message ?? "Message sent.");
+  form.reset();
+}
+
 function clearEvidenceInputs(): void {
   const evidence = document.querySelector<HTMLElement>("details.evidence");
   if (!evidence) {
@@ -1169,6 +1302,10 @@ document.addEventListener("submit", (event) => {
     event.preventDefault();
     void submitReport(form);
   }
+  if (form instanceof HTMLFormElement && form.id === "contact-form") {
+    event.preventDefault();
+    void submitContact(form);
+  }
 });
 
 document.addEventListener("change", (event) => {
@@ -1211,11 +1348,31 @@ document.addEventListener("click", (event) => {
   ) {
     closeReportPanel();
   }
+  if (target instanceof HTMLElement && target.id === "open-contact-from-refusal") {
+    event.preventDefault();
+    closeEntityRefusalPanel();
+    openContactPanel();
+  }
+  if (
+    target instanceof HTMLElement &&
+    (target.id === "close-entity-refusal" || target.id === "entity-refusal-panel")
+  ) {
+    closeEntityRefusalPanel();
+  }
+  if (
+    target instanceof HTMLElement &&
+    (target.id === "close-contact" || target.id === "contact-panel")
+  ) {
+    closeContactPanel();
+  }
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeTooltips();
+    closeReportPanel();
+    closeEntityRefusalPanel();
+    closeContactPanel();
   }
 });
 

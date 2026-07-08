@@ -556,7 +556,8 @@ th {
   font-weight: 700;
 }
 
-.report-panel {
+.report-panel,
+.modal-panel {
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -566,11 +567,13 @@ th {
   padding: 1rem;
 }
 
-.report-panel[hidden] {
+.report-panel[hidden],
+.modal-panel[hidden] {
   display: none;
 }
 
-.report-card {
+.report-card,
+.modal-card {
   width: min(42rem, 100%);
   max-height: min(48rem, calc(100vh - 2rem));
   overflow: auto;

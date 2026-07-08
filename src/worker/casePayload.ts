@@ -34,7 +34,7 @@ export interface CasePayload {
 }
 
 const ENTITY_REFUSAL_MESSAGE =
-  "Appeal Compass is designed only for individual residential homeowners appealing their own home; entity-owned, commercial, and association properties are not supported and generally require an attorney.";
+  "Appeal Compass is designed only for individual residential homeowners appealing their own home; if interested in a similar tool for commercial properties please reach out here.";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);

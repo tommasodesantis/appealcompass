@@ -66,8 +66,10 @@ Refresh these constants before each assessment session and before presenting the
 
 - Confirm `TURNSTILE_SITE_KEY` remains empty in the public repo unless intentionally enabling
   Turnstile for deployment.
-- Confirm `TURNSTILE_SECRET_KEY` and `GITHUB_ISSUES_TOKEN` are configured only as secrets.
-- Re-run report endpoint tests for Turnstile pass/fail and GitHub success/failure.
+- Confirm `TURNSTILE_SECRET_KEY`, `GITHUB_ISSUES_TOKEN`, and `RESEND_API_KEY` are configured only as
+  secrets.
+- Re-run report endpoint tests for Turnstile pass/fail and GitHub success/failure, and contact
+  endpoint tests for Turnstile pass/fail and Resend success/failure.
 - Open the generated `.xlsx` comparable export in Excel or LibreOffice after workbook schema
   changes.
 

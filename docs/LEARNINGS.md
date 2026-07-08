@@ -177,8 +177,8 @@ tests, and user-facing copy.
 ## Reporting
 
 - Problem reporting is wired but disabled until deployment secrets and public keys are configured.
-  Server-side secrets are `TURNSTILE_SECRET_KEY` and `GITHUB_ISSUES_TOKEN`; public constants are
-  `TURNSTILE_SITE_KEY` in `src/domain/publicConfig.ts`.
-- The Turnstile secret and GitHub token must never be committed or sent to the browser. The
-  reporting endpoint strips HTML from submitted text and excludes Turnstile tokens from GitHub issue
-  bodies.
+  Server-side secrets are `TURNSTILE_SECRET_KEY`, `GITHUB_ISSUES_TOKEN`, and `RESEND_API_KEY`;
+  public constants are `TURNSTILE_SITE_KEY` in `src/domain/publicConfig.ts`.
+- The Turnstile secret, GitHub token, and Resend API key must never be committed or sent to the
+  browser. The reporting and contact endpoints strip HTML from submitted text and exclude
+  Turnstile tokens from outbound GitHub issue bodies or Resend emails.

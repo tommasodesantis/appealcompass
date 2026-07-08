@@ -49,5 +49,6 @@ Tax Rate Report extract.
 - `/api/queue` exposes active/queued counts so the browser can show a plain-language busy message
   while the user waits.
 - The Socrata app token is read from `SOCRATA_APP_TOKEN` and never committed.
-- Problem reports require `TURNSTILE_SECRET_KEY` and `GITHUB_ISSUES_TOKEN`; those secrets are never
-  sent to the browser.
+- Problem reports require `TURNSTILE_SECRET_KEY` and `GITHUB_ISSUES_TOKEN`; commercial-interest
+  contact messages require `TURNSTILE_SECRET_KEY` and `RESEND_API_KEY`. Those secrets are never sent
+  to the browser.

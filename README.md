@@ -33,7 +33,8 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
   assumptions as a `.xlsx` workbook.
 - Restores the last successful in-tab assessment from `sessionStorage` when a user returns from the
   print page.
-- Provides a Turnstile-protected problem-reporting form when deployment secrets are configured.
+- Provides Turnstile-protected problem-reporting and commercial-interest contact forms when
+  deployment secrets are configured.
 
 ## What It Does Not Do
 
@@ -73,14 +74,16 @@ Create `.dev.vars` for local Wrangler development:
 SOCRATA_APP_TOKEN=your_token_here
 TURNSTILE_SECRET_KEY=your_turnstile_secret_here
 GITHUB_ISSUES_TOKEN=your_github_issues_token_here
+RESEND_API_KEY=your_resend_api_key_here
 ```
 
-Secrets stay server-side. Do not put Socrata tokens, GitHub tokens, or Turnstile secret keys in
-committed files, browser code, logs, or reports.
+Secrets stay server-side. Do not put Socrata tokens, GitHub tokens, Resend API keys, or Turnstile
+secret keys in committed files, browser code, logs, or reports.
 
 Public deployment constants live in `src/domain/publicConfig.ts`:
 
-- `TURNSTILE_SITE_KEY`: public Turnstile site key. When empty, the report form is disabled.
+- `TURNSTILE_SITE_KEY`: public Turnstile site key. When empty, the report and contact forms are
+  disabled.
 
 Run locally:
 
@@ -96,6 +99,7 @@ Useful endpoints:
 - `GET /api/queue`
 - `GET /api/case?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
 - `POST /api/report`
+- `POST /api/contact`
 - `GET /print?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
 
 Street-address lookup and example-property browsing are not public features. Users should recover
@@ -144,10 +148,11 @@ This repository is deploy-ready but this project does not deploy automatically.
    npx wrangler secret put SOCRATA_APP_TOKEN
    npx wrangler secret put TURNSTILE_SECRET_KEY
    npx wrangler secret put GITHUB_ISSUES_TOKEN
+   npx wrangler secret put RESEND_API_KEY
    ```
 
-3. Set the public Turnstile constant in `src/domain/publicConfig.ts` if the report form should be
-   enabled.
+3. Set the public Turnstile constant in `src/domain/publicConfig.ts` if the report and contact forms
+   should be enabled.
 4. Review `wrangler.jsonc`.
 5. Deploy intentionally:
 
