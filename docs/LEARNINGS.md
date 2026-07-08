@@ -109,6 +109,9 @@ tests, and user-facing copy.
   not supported and generally require an attorney.` in every results view and printable packet.
 - Every deadline must carry a link to the official venue source and the instruction to verify at
   the official source before filing.
+- Users explicitly choose Assessor, BOR, or PTAB. The app must not silently switch venues; when a
+  selected Assessor or BOR window is closed, keep preparation guidance available while preserving
+  the selected venue's comparable profile and checklist.
 - PTAB deadlines are computed only from a user-entered BOR decision date. If no date is provided,
   the app must refuse to guess.
 - Estimated savings are rough ranges only. Display the equalizer and tax-rate assumptions next to

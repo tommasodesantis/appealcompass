@@ -4,6 +4,7 @@ import { ConcurrencyLimiter } from "./limiter";
 import { QUEUED_MESSAGE } from "./messages";
 
 const REQUIRED_STEP_ONE = "ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no";
+const REQUIRED_CASE_QUERY = `venue=assessor&${REQUIRED_STEP_ONE}`;
 
 test("health endpoint returns a JSON status", async () => {
   const response = await worker.fetch(new Request("http://example.test/api/health"), {});
@@ -26,7 +27,7 @@ test("app shell never renders analytics and omits Turnstile while public token i
 test("fixture-mode case endpoint returns a computed case payload", async () => {
   const response = await worker.fetch(
     new Request(
-      `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&today=2025-07-10&${REQUIRED_STEP_ONE}`,
+      `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=bor&today=2025-07-10&${REQUIRED_STEP_ONE}`,
     ),
     {},
   );
@@ -50,7 +51,7 @@ test.each([
   ["03-00-000-000-0001", "bor", "2025-07-10", "bor", "open"],
   ["03-00-000-000-0020", "assessor", "2026-05-01", "assessor", "open"],
   ["03-00-000-000-0030", "bor", "2025-07-10", "bor", "open"],
-  ["03-00-000-000-0040", "auto", "2025-07-10", "closed", "closed"],
+  ["03-00-000-000-0040", "bor", "2025-07-10", "bor", "closed"],
 ])(
   "fixture endpoint handles %s at %s without crashing",
   async (pin, venue, today, expectedVenue, expectedStatus) => {
@@ -106,10 +107,25 @@ test("case endpoint returns user-facing errors", async () => {
   });
 });
 
+test("case endpoint requires an explicit venue", async () => {
+  const response = await worker.fetch(
+    new Request(`http://example.test/api/case?demo=1&pin=03-00-000-000-0001&${REQUIRED_STEP_ONE}`),
+    {},
+  );
+  expect(response.status).toBe(400);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: {
+      kind: "input",
+      message: "Choose where you want to appeal.",
+    },
+  });
+});
+
 test("case endpoint refuses entity-owned properties before assessment", async () => {
   const response = await worker.fetch(
     new Request(
-      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&ownershipType=llc&assessorAppealFiled=no&borAppealFiled=no",
+      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=assessor&ownershipType=llc&assessorAppealFiled=no&borAppealFiled=no",
     ),
     {},
   );
@@ -127,7 +143,7 @@ test("case endpoint refuses entity-owned properties before assessment", async ()
 test("case endpoint rejects unsupported jurisdictions", async () => {
   const response = await worker.fetch(
     new Request(
-      `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&jurisdiction=other&${REQUIRED_STEP_ONE}`,
+      `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&jurisdiction=other&${REQUIRED_CASE_QUERY}`,
     ),
     {},
   );
@@ -247,7 +263,7 @@ test("report endpoint returns friendly error when GitHub issue creation fails", 
 
 function caseRequest(index = 0): Request {
   return new Request(
-    `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&today=2025-07-10&request=${index}&${REQUIRED_STEP_ONE}`,
+    `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&today=2025-07-10&request=${index}&${REQUIRED_CASE_QUERY}`,
   );
 }
 

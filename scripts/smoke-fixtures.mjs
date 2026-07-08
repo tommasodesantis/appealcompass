@@ -41,8 +41,8 @@ const checks = [
   },
   {
     label: "unknown township closed",
-    path: `/api/case?demo=1&pin=03-00-000-000-0040&venue=auto&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"venue\":\"closed\"", "No configured CCAO or BOR"],
+    path: `/api/case?demo=1&pin=03-00-000-000-0040&venue=bor&today=2025-07-10&${requiredStepOne}`,
+    expect: ["\"venue\":\"bor\"", "BOR window is not currently open"],
   },
   {
     label: "print ptab",

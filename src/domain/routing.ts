@@ -62,18 +62,54 @@ function firstOpenOrUpcoming(
   return { status: null, deadline: null, days: null };
 }
 
+function selectedWindowStatus(
+  windows: FilingWindow[],
+  today: string,
+): {
+  status: WindowStatus;
+  deadline: string | null;
+  days: number | null;
+  window: FilingWindow | null;
+} {
+  const actionable = firstOpenOrUpcoming(windows, today);
+  if (actionable.status) {
+    const window =
+      windows.find((item) =>
+        actionable.status === "open"
+          ? item.closes === actionable.deadline
+          : item.opens === actionable.deadline,
+      ) ?? null;
+    return { ...actionable, status: actionable.status, window };
+  }
+  const latestClosed = [...windows]
+    .filter((window) => windowStatusOn(window, today).status === "closed")
+    .sort((a, b) => b.closes.localeCompare(a.closes))[0];
+  if (latestClosed) {
+    return {
+      status: "closed",
+      deadline: latestClosed.closes,
+      days: daysBetween(today, latestClosed.closes),
+      window: latestClosed,
+    };
+  }
+  return { status: "closed", deadline: null, days: null, window: null };
+}
+
 export function routeCase(
   townshipName: string,
   today: string,
-  requestedVenue: Venue = "auto",
+  requestedVenue: Venue,
   borDecisionDate: string | null = null,
   appealStatus: AppealStatusInput = DEFAULT_APPEAL_STATUS,
 ): RouteResult {
   const township = canonicalTownship(townshipName);
-  const warnings = [
-    stalenessWarning(CCAO_CALENDAR, today),
-    stalenessWarning(BOR_CALENDAR, today),
-  ].filter((warning): warning is string => Boolean(warning));
+  const warnings = (
+    requestedVenue === "assessor"
+      ? [stalenessWarning(CCAO_CALENDAR, today)]
+      : requestedVenue === "bor"
+        ? [stalenessWarning(BOR_CALENDAR, today)]
+        : []
+  ).filter((warning): warning is string => Boolean(warning));
   const status = { ...DEFAULT_APPEAL_STATUS, ...appealStatus };
   const suppliedBorDecisionDate = status.borDecisionDate ?? borDecisionDate;
 
@@ -128,75 +164,69 @@ export function routeCase(
     };
   }
 
-  function routeBorAfterAssessorDecision(bor: {
-    status: WindowStatus | null;
-    deadline: string | null;
-    days: number | null;
-  }): RouteResult {
-    if (bor.status === "open" || bor.status === "upcoming") {
-      return {
-        venue: "bor",
-        headline:
-          bor.status === "open"
-            ? "BOR filing window is open now."
-            : "BOR window is upcoming; prepare now.",
-        reasoning: [
-          "You reported that the Assessor appeal is complete for this year.",
-          `Township routed to BOR calendar as ${township}.`,
-          "File by the township close date and submit evidence by the evidence deadline.",
-        ],
-        actionStatus: bor.status,
-        deadline: bor.deadline,
-        daysRemaining: bor.days,
-        warnings,
-        officialUrl: BOR_DATES_PDF_URL,
-      };
-    }
-    return closedRoute([
-      "You reported that the Assessor appeal is complete for this year.",
-      "No configured BOR filing window is currently open or upcoming for this township.",
-      "Prepare evidence for the next available appeal path and double-check official deadlines.",
-    ]);
-  }
-
-  function closedRoute(reasoning: string[]): RouteResult {
+  function routeAssessor(): RouteResult {
+    const assessor = selectedWindowStatus(ccaoWindowsForTownship(township), today);
     return {
-      venue: "closed",
-      headline: "No configured CCAO or BOR filing window is currently actionable.",
-      reasoning,
-      actionStatus: "closed",
-      deadline: null,
-      daysRemaining: null,
+      venue: "assessor",
+      headline:
+        assessor.status === "open"
+          ? "Assessor filing window is open now."
+          : assessor.status === "upcoming"
+            ? "Assessor window is upcoming; prepare now."
+            : "Assessor window is not currently configured as open.",
+      reasoning: [
+        "You selected the Cook County Assessor, the first-level appeal venue.",
+        `Township matched to Assessor calendar as ${township}.`,
+        assessor.status === "closed"
+          ? "No configured Assessor filing window is currently open or upcoming for this township; prepare evidence and verify the next filing period at the official source."
+          : "File by the township close date shown by the official Assessor calendar.",
+        `Property-description errors start with the Assessor. ${CERTIFICATE_OF_ERROR_EXPLANATION}`,
+      ],
+      actionStatus: assessor.status,
+      deadline: assessor.deadline,
+      daysRemaining: assessor.days,
       warnings,
       officialUrl: CCAO_OFFICIAL_URL,
     };
   }
 
-  /*
-   * Routing decision table for Step 1 status answers:
-   * - no Assessor filed + no BOR filed: use current window logic (Assessor -> BOR -> closed).
-   * - Assessor filed + no Assessor decision + no BOR filed: do not route back to Assessor;
-   *   explain waiting for the decision and preparing BOR evidence.
-   * - Assessor filed + Assessor decision + no BOR filed: route to BOR when open/upcoming,
-   *   otherwise closed-prep.
-   * - BOR filed + no BOR decision: explain waiting for BOR; PTAB comes later and no
-   *   needs-input error is shown.
-   * - BOR filed + BOR decision + date: compute the PTAB 30-day deadline.
-   * - BOR filed + BOR decision + no date: refuse to guess the PTAB deadline.
-   */
+  function routeBor(): RouteResult {
+    const bor = selectedWindowStatus(borWindowsForTownship(township), today);
+    const evidenceText = bor.window?.evidenceDeadline
+      ? ` Evidence deadline: ${bor.window.evidenceDeadline}.`
+      : "";
+    return {
+      venue: "bor",
+      headline:
+        bor.status === "open"
+          ? "BOR filing window is open now."
+          : bor.status === "upcoming"
+            ? "BOR window is upcoming; prepare now."
+            : "BOR window is not currently open.",
+      reasoning: [
+        "You selected the Cook County Board of Review, the second-level Cook County appeal venue.",
+        `Township matched to BOR calendar as ${township}.`,
+        bor.status === "closed"
+          ? "No configured BOR filing window is currently open or upcoming for this township; prepare evidence and verify the next filing period at the official source."
+          : `File by the township close date and submit evidence by the evidence deadline.${evidenceText}`,
+      ],
+      actionStatus: bor.status,
+      deadline: bor.deadline,
+      daysRemaining: bor.days,
+      warnings,
+      officialUrl: BOR_DATES_PDF_URL,
+    };
+  }
 
-  const ccao = firstOpenOrUpcoming(ccaoWindowsForTownship(township), today);
-  const bor = firstOpenOrUpcoming(borWindowsForTownship(township), today);
-
-  if (status.borAppealFiled) {
-    if (status.borDecisionReceived === false) {
+  if (requestedVenue === "ptab") {
+    if (status.borAppealFiled && status.borDecisionReceived === false) {
       return {
         venue: "ptab",
         headline: "Wait for the BOR decision before starting PTAB.",
         reasoning: [
-          "You reported that a BOR appeal has already been filed for this year.",
+          "You selected PTAB and reported that a BOR appeal has already been filed for this year.",
           "PTAB becomes available only after the BOR issues its written decision.",
-          "Keep preparing evidence and keep this page available so you can enter the Step 1 BOR decision date when the notice arrives.",
+          "Keep preparing evidence and enter the BOR decision date when the notice arrives.",
         ],
         actionStatus: "upcoming",
         deadline: null,
@@ -210,84 +240,10 @@ export function routeCase(
         ? ptabFromDecisionDate(suppliedBorDecisionDate)
         : ptabNeedsInput();
     }
-  }
-
-  if (requestedVenue === "ptab" || suppliedBorDecisionDate !== null) {
     return suppliedBorDecisionDate
       ? ptabFromDecisionDate(suppliedBorDecisionDate)
       : ptabNeedsInput();
   }
 
-  if (status.assessorAppealFiled && status.assessorDecisionReceived === false) {
-    const actionStatus =
-      bor.status === "open" || bor.status === "upcoming" ? bor.status : "upcoming";
-    return {
-      venue: "bor",
-      headline: "Wait for the Assessor decision and prepare for BOR.",
-      reasoning: [
-        "You reported that an Assessor appeal has already been filed for this year.",
-        "Do not file another Assessor appeal for the same year; wait for the decision notice.",
-        "Use this time to prepare BOR evidence in case you need the second-level appeal.",
-      ],
-      actionStatus,
-      deadline: bor.deadline,
-      daysRemaining: bor.days,
-      warnings,
-      officialUrl: BOR_DATES_PDF_URL,
-    };
-  }
-
-  if (status.assessorAppealFiled && status.assessorDecisionReceived === true) {
-    return routeBorAfterAssessorDecision(bor);
-  }
-
-  if (requestedVenue === "assessor" || (requestedVenue === "auto" && ccao.status === "open")) {
-    const assessorStatus = ccao.status ?? "closed";
-    return {
-      venue: "assessor",
-      headline:
-        assessorStatus === "open"
-          ? "File with the Cook County Assessor now."
-          : "Assessor window is not currently configured as open.",
-      reasoning: [
-        "The Assessor is the first-level appeal and is free.",
-        "Filing preserves the path to BOR, where Rule 15 may ask for Assessor documents.",
-        `Property-description errors start with the Assessor. ${CERTIFICATE_OF_ERROR_EXPLANATION}`,
-      ],
-      actionStatus: assessorStatus,
-      deadline: ccao.deadline,
-      daysRemaining: ccao.days,
-      warnings,
-      officialUrl: CCAO_OFFICIAL_URL,
-    };
-  }
-
-  if (requestedVenue === "bor" || (requestedVenue === "auto" && bor.status !== null)) {
-    const borActionStatus = bor.status ?? "closed";
-    return {
-      venue: "bor",
-      headline:
-        borActionStatus === "open"
-          ? "BOR filing window is open now."
-          : borActionStatus === "upcoming"
-            ? "BOR window is upcoming; prepare now."
-            : "BOR window is not currently open.",
-      reasoning: [
-        `Township routed to BOR calendar as ${township}.`,
-        "BOR is the second-level appeal venue after or instead of the Assessor window.",
-        "File by the township close date and submit evidence by the evidence deadline.",
-      ],
-      actionStatus: borActionStatus,
-      deadline: bor.deadline,
-      daysRemaining: bor.days,
-      warnings,
-      officialUrl: BOR_DATES_PDF_URL,
-    };
-  }
-
-  return closedRoute([
-    "Prepare evidence for the next township session.",
-    "If you already received a BOR decision, answer the Step 1 BOR-decision question and enter the decision date so Appeal Compass can compute the PTAB deadline.",
-    CERTIFICATE_OF_ERROR_EXPLANATION,
-  ]);
+  return requestedVenue === "assessor" ? routeAssessor() : routeBor();
 }

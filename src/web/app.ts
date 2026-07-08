@@ -1,3 +1,11 @@
+import {
+  BOR_DATES_PDF_URL,
+  BOR_GROUPS,
+  CCAO_OFFICIAL_URL,
+  CCAO_WINDOWS,
+  type FilingWindow,
+  PTAB_OFFICIAL_URL,
+} from "../domain/config";
 import { TURNSTILE_SITE_KEY } from "../domain/publicConfig";
 import { buildComparableWorkbook, comparableWorkbookFilename } from "./xlsx";
 
@@ -142,13 +150,22 @@ function externalLink(url: string, label: string): string {
   return `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}<span class="sr-only"> (opens in new tab)</span></a>`;
 }
 
-function infoTooltip(label: string, text: string): string {
+function tooltip(label: string, text: string, marker = "?", extraClass = ""): string {
   tooltipCounter += 1;
   const id = `tooltip-${tooltipCounter}`;
-  return `<span class="tooltip">
-    <button class="tooltip-toggle" type="button" aria-label="${escapeHtml(label)}" aria-expanded="false" aria-describedby="${id}">?</button>
-    <span class="tooltip-bubble" id="${id}" role="tooltip" hidden>${escapeHtml(text)}</span>
+  const className = extraClass ? `tooltip ${extraClass}` : "tooltip";
+  return `<span class="${className}">
+    <button class="tooltip-toggle" type="button" aria-label="${escapeHtml(label)}" aria-expanded="false" aria-describedby="${id}">${escapeHtml(marker)}</button>
+    <span class="tooltip-bubble" id="${id}" role="tooltip">${escapeHtml(text)}</span>
   </span>`;
+}
+
+function infoTooltip(label: string, text: string): string {
+  return tooltip(label, text);
+}
+
+function warningTooltip(label: string, text: string): string {
+  return tooltip(label, text, "!", "warning-tooltip");
 }
 
 function linkedText(value: unknown): string {
@@ -176,6 +193,137 @@ function numberText(value: number | null, digits = 0): string {
   return value === null
     ? "Not available"
     : value.toLocaleString("en-US", { maximumFractionDigits: digits });
+}
+
+function clientTodayIso(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateLabel(isoDate: string): string {
+  const [yearText, monthText, dayText] = isoDate.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return isoDate;
+  }
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function allWindowsClosed(windows: FilingWindow[], today: string): boolean {
+  return windows.length > 0 && windows.every((window) => today > window.closes);
+}
+
+function filingWindowLabel(window: FilingWindow): string {
+  const evidence = window.evidenceDeadline
+    ? `; evidence due ${dateLabel(window.evidenceDeadline)}`
+    : "";
+  return `${dateLabel(window.opens)} to ${dateLabel(window.closes)}${evidence}`;
+}
+
+function assessorDeadlineList(): string {
+  const rows = Object.entries(CCAO_WINDOWS)
+    .flatMap(([township, windows]) =>
+      windows.map(
+        (window) => `<li>${escapeHtml(township)}: ${escapeHtml(filingWindowLabel(window))}</li>`,
+      ),
+    )
+    .join("");
+  return (
+    rows || "<li>No configured Assessor filing windows are available in the current data.</li>"
+  );
+}
+
+function borDeadlineList(): string {
+  return Object.entries(BOR_GROUPS)
+    .map(([group, info]) => {
+      const windows = info.windows.map((window) => filingWindowLabel(window)).join("; ");
+      return `<li>Group ${escapeHtml(group)} (${escapeHtml(info.townships.join(", "))}): ${escapeHtml(windows)}</li>`;
+    })
+    .join("");
+}
+
+function deadlineWarningForVenue(venue: "assessor" | "bor", today: string): string {
+  const windows =
+    venue === "assessor"
+      ? Object.values(CCAO_WINDOWS).flat()
+      : Object.values(BOR_GROUPS).flatMap((group) => group.windows);
+  if (!allWindowsClosed(windows, today)) {
+    return "";
+  }
+  const venueLabel = venue === "assessor" ? "Assessor" : "Board of Review";
+  return warningTooltip(
+    `${venueLabel} calendar warning`,
+    `All configured deadlines for this venue appear to be past as of ${today}. The data may be stale; verify at the official source before filing. You can still select this venue to prepare for the next session.`,
+  );
+}
+
+function venueOptionHtml(input: {
+  value: "assessor" | "bor" | "ptab";
+  label: string;
+  warning?: string;
+  details: string;
+}): string {
+  return `<div class="venue-option">
+    <label class="venue-choice">
+      <input type="radio" name="venue" value="${input.value}" required>
+      <span>${escapeHtml(input.label)}</span>
+      ${input.warning ?? ""}
+    </label>
+    ${input.details}
+  </div>`;
+}
+
+function venuePickerHtml(): string {
+  const today = clientTodayIso();
+  return `<fieldset class="question-group venue-picker">
+    <legend>Where do you want to appeal?</legend>
+    <div class="venue-options">
+      ${venueOptionHtml({
+        value: "assessor",
+        label: "Cook County Assessor",
+        warning: deadlineWarningForVenue("assessor", today),
+        details: `<details class="venue-details">
+          <summary>About the Assessor path</summary>
+          <p>The Assessor is the first-level Cook County appeal venue. Start here for current-year assessment challenges and documented property-description errors.</p>
+          <p>Use this path if you are within the township filing window or preparing for the next Assessor session.</p>
+          <p>Official source: ${externalLink(CCAO_OFFICIAL_URL, "Cook County Assessor calendar")}. Verify at the official source before filing.</p>
+          <ul class="deadline-list">${assessorDeadlineList()}</ul>
+        </details>`,
+      })}
+      ${venueOptionHtml({
+        value: "bor",
+        label: "Cook County Board of Review",
+        warning: deadlineWarningForVenue("bor", today),
+        details: `<details class="venue-details">
+          <summary>About the BOR path</summary>
+          <p>The Board of Review is the second-level Cook County appeal venue and has its own township filing and evidence deadlines.</p>
+          <p>Use this path if you are filing at BOR, preparing after an Assessor appeal, or checking BOR-specific comparable evidence.</p>
+          <p>Official source: ${externalLink(BOR_DATES_PDF_URL, "Cook County BOR township dates")}. Verify at the official source before filing.</p>
+          <ul class="deadline-list">${borDeadlineList()}</ul>
+        </details>`,
+      })}
+      ${venueOptionHtml({
+        value: "ptab",
+        label: "Illinois PTAB",
+        details: `<details class="venue-details">
+          <summary>About the PTAB path</summary>
+          <p>PTAB is the Illinois state appeal board available after a written BOR decision for the same tax year.</p>
+          <p>Use this path only when you have, or are preparing for, a BOR decision notice. The deadline is generally 30 days from the written BOR decision date; Appeal Compass will not guess it without that date.</p>
+          <p>Official source: ${externalLink(PTAB_OFFICIAL_URL, "Illinois PTAB")}. Verify at the official source before filing.</p>
+        </details>`,
+      })}
+    </div>
+  </fieldset>`;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -347,6 +495,8 @@ function shell(): void {
         </div>
         <p class="hint pin-help">Don't know your PIN? You can recover it from the ${externalLink(COOK_PROPERTY_TAX_PORTAL_URL, "Cook County Property Tax Portal")}.</p>
 
+        ${venuePickerHtml()}
+
         <fieldset class="question-group">
           <legend>Ownership type</legend>
           <label>
@@ -402,15 +552,6 @@ function shell(): void {
         <details class="evidence">
           <summary>Add your own evidence</summary>
           <div class="evidence-grid">
-            <label>
-              <span>Venue</span>
-              <select name="venue">
-                <option value="auto">Auto-route</option>
-                <option value="assessor">Assessor</option>
-                <option value="bor">Board of Review</option>
-                <option value="ptab">PTAB</option>
-              </select>
-            </label>
             <label>
               <span>Purchase price</span>
               <input name="purchasePrice" inputmode="decimal" data-evidence-input>
@@ -610,7 +751,7 @@ function renderComparables(payload: CasePayload): string {
   const rows = comps.exhibit
     .map((exhibit) => {
       const metric =
-        comps.profileLabel.includes("Assessor") || payload.routing.venue === "closed"
+        comps.profileLabel.includes("Assessor") || payload.routing.venue === "assessor"
           ? exhibit.comparable.av
           : exhibit.comparable.improvementAv;
       return `<tr>
@@ -858,7 +999,6 @@ function closeTooltips(except: HTMLButtonElement | null = null): void {
     const bubble = bubbleId ? document.getElementById(bubbleId) : null;
     button.setAttribute("aria-expanded", "false");
     if (bubble) {
-      bubble.hidden = true;
       bubble.removeAttribute("style");
     }
   }
@@ -889,7 +1029,6 @@ function toggleTooltip(button: HTMLButtonElement): void {
   const willOpen = button.getAttribute("aria-expanded") !== "true";
   closeTooltips(willOpen ? button : null);
   button.setAttribute("aria-expanded", String(willOpen));
-  bubble.hidden = !willOpen;
   if (willOpen) {
     positionTooltip(button, bubble);
   } else {

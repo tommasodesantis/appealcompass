@@ -4,8 +4,8 @@ Appeal Compass is a webapp for screening residential parcels for property-tax ap
 is designed to support multiple jurisdictions over time; Cook County, Illinois is the first
 implemented jurisdiction.
 
-It loads public county data server-side, routes a homeowner through the Assessor -> Board of Review
--> PTAB appeal ladder, and generates a print-optimized evidence packet that can be saved as PDF from
+It loads public county data server-side, helps a homeowner evaluate the selected Assessor, Board of
+Review, or PTAB path, and generates a print-optimized evidence packet that can be saved as PDF from
 the browser.
 
 ## Why this tool?
@@ -20,8 +20,8 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
 - Screens public data for uniformity, sale/appraisal, factual-error, and assessment-shock evidence.
 - Notes other possible appeal factors the homeowner may document directly, such as condition,
   vacancy, demolition, and exemption-related statuses.
-- Routes the case to the Cook County Assessor, Cook County Board of Review, Illinois PTAB, or a
-  closed-window preparation path.
+- Lets the homeowner explicitly choose Cook County Assessor, Cook County Board of Review, or
+  Illinois PTAB and reports the selected venue's current window status.
 - Shows deadlines, days remaining, official-source links, warning messages, comparable evidence,
   estimated savings assumptions, and a venue-specific checklist.
 - Produces a printable evidence packet at `/print`.
@@ -87,9 +87,9 @@ Useful endpoints:
 
 - `GET /api/health`
 - `GET /api/queue`
-- `GET /api/case?pin=03-00-000-000-0001&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
+- `GET /api/case?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
 - `POST /api/report`
-- `GET /print?pin=03-00-000-000-0001&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
+- `GET /print?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
 
 Street-address lookup and example-property browsing are not public features. Users should recover
 their PIN from the Cook County Property Tax Portal and enter it directly.

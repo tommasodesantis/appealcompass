@@ -148,7 +148,12 @@ export async function buildCasePayload(
   const pin = params.get("pin") ?? "";
   const today = params.get("today") ?? todayIso();
   jurisdictionFromParams(params);
-  const requestedVenue = (params.get("venue") ?? "auto") as Venue;
+  const requestedVenue: Venue = requiredChoice(
+    params,
+    "venue",
+    ["assessor", "bor", "ptab"] as const,
+    "where you want to appeal",
+  );
   const taxRate = positiveNumber(params, "taxRate") ?? DEFAULT_TAX_RATE;
   const userEvidence = userEvidenceFromParams(params);
   const caseFile = withUserEvidence(await repo.loadCaseByPin(pin), userEvidence);

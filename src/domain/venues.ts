@@ -49,8 +49,8 @@ class AssessorAdapter implements VenueAdapter {
     return items;
   }
 
-  sections(caseFile: CaseFile): PacketSection[] {
-    return [
+  sections(caseFile: CaseFile, _evidence: EvidenceSummary, route: RouteResult): PacketSection[] {
+    const sections: PacketSection[] = [
       {
         title: "Assessor Filing Instructions",
         lines: [
@@ -62,6 +62,17 @@ class AssessorAdapter implements VenueAdapter {
       },
       { title: "Assessor Checklist", lines: this.checklist(caseFile) },
     ];
+    if (route.actionStatus === "closed") {
+      sections.push({
+        title: "Closed-Window Preparation",
+        lines: [
+          "The selected Assessor window is not currently open in the configured calendar.",
+          "Use this packet to prepare evidence for the next Assessor session, but verify current dates at the official source before filing.",
+          CERTIFICATE_OF_ERROR_EXPLANATION,
+        ],
+      });
+    }
+    return sections;
   }
 }
 
@@ -93,8 +104,8 @@ class BoardOfReviewAdapter implements VenueAdapter {
     return items;
   }
 
-  sections(caseFile: CaseFile): PacketSection[] {
-    return [
+  sections(caseFile: CaseFile, _evidence: EvidenceSummary, route: RouteResult): PacketSection[] {
+    const sections: PacketSection[] = [
       {
         title: "BOR Filing Instructions",
         lines: [
@@ -106,6 +117,17 @@ class BoardOfReviewAdapter implements VenueAdapter {
       },
       { title: "BOR Rules Checklist", lines: this.checklist(caseFile) },
     ];
+    if (route.actionStatus === "closed") {
+      sections.push({
+        title: "Closed-Window Preparation",
+        lines: [
+          "The selected BOR window is not currently open in the configured calendar.",
+          "Use this packet to prepare evidence for the next BOR session, but verify current dates at the official source before filing.",
+          "If you later receive a BOR decision and want PTAB screening, choose PTAB and enter the written BOR decision date.",
+        ],
+      });
+    }
+    return sections;
   }
 }
 

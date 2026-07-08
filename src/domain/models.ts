@@ -1,4 +1,4 @@
-export type Venue = "auto" | "assessor" | "bor" | "ptab";
+export type Venue = "assessor" | "bor" | "ptab";
 export type Jurisdiction = "cook_county_il";
 export type ResolvedVenue = "assessor" | "bor" | "ptab" | "closed";
 export type EvidenceTier = "STRONG" | "MODERATE" | "LIMITED";
