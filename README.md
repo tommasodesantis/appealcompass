@@ -1,11 +1,18 @@
 # Appeal Compass
 
-Appeal Compass is a webapp for screening Cook County residential parcels for property-tax appeal
-evidence.
+Appeal Compass is a webapp for screening residential parcels for property-tax appeal evidence. It
+is designed to support multiple jurisdictions over time; Cook County, Illinois is the first
+implemented jurisdiction.
 
 It loads public county data server-side, routes a homeowner through the Assessor -> Board of Review
 -> PTAB appeal ladder, and generates a print-optimized evidence packet that can be saved as PDF from
 the browser.
+
+## Why this tool?
+
+Property taxes are rising in many jurisdictions, and homeowners often have to navigate appeal rules
+without affordable, practical software support. This project exists because there was no
+open-source DIY property-tax-appeal tool built to help individual homeowners screen their own case.
 
 ## What It Does
 

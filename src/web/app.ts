@@ -231,11 +231,15 @@ function githubLogo(): string {
 
 function siteFooter(): string {
   return `<footer class="site-footer">
-    <p>Appeal Compass is an open-source project developed by <a href="https://github.com/tommasodesantis" target="_blank" rel="noreferrer">Tommaso De Santis<span class="sr-only"> (opens in new tab)</span></a> under GPLv3.</p>
+    <p class="project-credit">Appeal Compass is an open-source project developed by <a href="https://github.com/tommasodesantis" target="_blank" rel="noreferrer">Tommaso De Santis<span class="sr-only"> (opens in new tab)</span></a> under GPLv3.</p>
     <a class="footer-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${githubLogo()}<span>View on GitHub</span><span class="sr-only"> (opens in new tab)</span></a>
     <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Donations help the project grow and cover hosting and maintenance costs.<span class="sr-only"> (opens in new tab)</span></a>
     <button type="button" id="report-problem" class="link-button">Report a problem</button>
   </footer>`;
+}
+
+function githubHeaderLink(): string {
+  return `<a class="header-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${githubLogo()}<span>View on GitHub</span><span class="sr-only"> (opens in new tab)</span></a>`;
 }
 
 function reportPanel(): string {
@@ -312,7 +316,14 @@ async function queuedProgressMessage(): Promise<string | null> {
 function shell(): void {
   appRoot.innerHTML = `
     <header class="topline">
-      <h1>Appeal Compass</h1>
+      <div class="topline-head">
+        <h1>Appeal Compass</h1>
+        ${githubHeaderLink()}
+      </div>
+      <details class="tool-description">
+        <summary>What this tool does</summary>
+        <p>Appeal Compass screens public data for residential property-tax appeal evidence. It is open-source and currently runs on donations. <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support it on Ko-fi<span class="sr-only"> (opens in new tab)</span></a>.</p>
+      </details>
       <p class="lede">Enter a PIN. A PIN is the 14-digit parcel number on your assessment notice, tax bill, or property record card.</p>
     </header>
 
@@ -327,7 +338,7 @@ function shell(): void {
             <option value="cook_county_il" selected>Cook County, Illinois</option>
           </select>
         </label>
-        <p class="hint">More jurisdictions may be added - this is an open-source project.</p>
+        <p class="hint">More jurisdictions will be added.</p>
         <div class="lookup-grid">
           <label>
             <span>PIN</span>

@@ -89,6 +89,46 @@ main {
   margin-bottom: 1.5rem;
 }
 
+.topline-head,
+.packet-title-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.header-icon-link {
+  min-height: 2.75rem;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.72);
+  padding: 0.62rem 0.85rem;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 10px 30px rgb(23 33 43 / 0.08);
+}
+
+.tool-description {
+  max-width: 48rem;
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
+.tool-description summary {
+  min-height: 0;
+  display: list-item;
+  color: var(--accent);
+}
+
+.tool-description p {
+  margin: 0.35rem 0 0;
+  line-height: 1.5;
+}
+
 .step-label {
   margin: 0 0 0.5rem;
   color: #704611;
@@ -428,6 +468,11 @@ th {
   max-width: 35rem;
 }
 
+.site-footer .project-credit {
+  max-width: none;
+  white-space: nowrap;
+}
+
 .site-footer a {
   min-height: 2.75rem;
   display: inline-flex;
@@ -494,6 +539,15 @@ th {
     font-size: clamp(2.6rem, 17vw, 4.6rem);
   }
 
+  .topline-head,
+  .packet-title-row {
+    display: block;
+  }
+
+  .header-icon-link {
+    margin: 0.25rem 0 1rem;
+  }
+
   .lookup-grid,
   .evidence-grid,
   .checks,
@@ -512,6 +566,10 @@ th {
   .site-footer a {
     align-items: flex-start;
     width: 100%;
+  }
+
+  .site-footer .project-credit {
+    white-space: normal;
   }
 
   .tooltip-bubble {

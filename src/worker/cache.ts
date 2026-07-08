@@ -41,7 +41,7 @@ export class CloudflareCacheStore implements CacheStore {
   constructor(private readonly cache: Cache = (caches as unknown as { default: Cache }).default) {}
 
   private requestFor(key: string): Request {
-    return new Request(`https://cache.cookpropertytax.local/socrata/${encodeURIComponent(key)}`);
+    return new Request(`https://cache.appealcompass.local/socrata/${encodeURIComponent(key)}`);
   }
 
   async get(key: string): Promise<unknown | null> {
