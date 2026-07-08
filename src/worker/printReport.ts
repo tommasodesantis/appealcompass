@@ -1,3 +1,4 @@
+import { assessmentTypeLabel } from "../domain/comparableDisplay";
 import {
   ASSESSMENT_LEVEL,
   CCAO_EXEMPTIONS_URL,
@@ -175,32 +176,29 @@ function subjectValues(payload: CasePayload): string {
     .join("")}</dl>`;
 }
 
-function comparableMetric(
-  payload: CasePayload,
-  comp: { av: number | null; improvementAv: number | null },
-) {
-  const profile = payload.evidence.comparableAnalysis.profileKey;
-  return profile === "bor" || profile === "ptab" ? comp.improvementAv : comp.av;
-}
-
 function comparablesTable(payload: CasePayload): string {
   const comps = payload.evidence.comparableAnalysis;
   if (comps.status !== "ok" || comps.exhibit.length === 0) {
     return `<p>${escapeHtml(comps.note)}</p>`;
   }
+  const assessmentType = assessmentTypeLabel(comps.profileKey);
   return `<table>
-    <thead><tr><th>PIN</th><th>Sqft</th><th>Built Year</th><th>Assessment Year</th><th>Metric</th><th>Metric/sqft</th><th>Distance</th></tr></thead>
+    <thead><tr><th>PIN</th><th>Distance km</th><th>Neighborhood</th><th>Property class</th><th>Building sqft</th><th>Year built</th><th>Sale date</th><th>Sale price</th><th>Assessment type</th><th>Assessment $/sqft</th><th>Similarity score</th></tr></thead>
     <tbody>
       ${comps.exhibit
         .map(
           (item) => `<tr>
             <td>${escapeHtml(item.comparable.pinFormatted)}</td>
+            <td>${item.distanceKm === null ? "Not available" : numberText(item.distanceKm, 2)}</td>
+            <td>${escapeHtml(item.comparable.neighborhood ?? "Not available")}</td>
+            <td>${escapeHtml(item.comparable.propertyClass ?? "Not available")}</td>
             <td>${numberText(item.comparable.buildingSqft)}</td>
             <td>${escapeHtml(item.comparable.yearBuilt ?? "Not available")}</td>
-            <td>${escapeHtml(item.comparable.assessmentYear ?? "Not available")}</td>
-            <td>${dollars(comparableMetric(payload, item.comparable))}</td>
+            <td>${escapeHtml(item.comparable.saleDate ?? "Not available")}</td>
+            <td>${dollars(item.comparable.salePrice)}</td>
+            <td>${escapeHtml(assessmentType)}</td>
             <td>${dollars(item.avPerSqft)}</td>
-            <td>${item.distanceKm === null ? "Not available" : `${numberText(item.distanceKm, 2)} km`}</td>
+            <td>${numberText(item.similarity, 3)}</td>
           </tr>`,
         )
         .join("")}
@@ -302,6 +300,7 @@ export function buildPrintReport(payload: CasePayload): string {
         )}; median ${dollars(comps.medianAvPerSqft)}; percentile ${numberText(
           comps.percentile,
         )}; gap ${numberText(comps.gapPct)}%.</p>
+        <p>Similarity score: lower means more similar.</p>
         ${comparablesTable(payload)}
       </section>
 

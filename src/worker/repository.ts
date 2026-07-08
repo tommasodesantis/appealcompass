@@ -12,6 +12,7 @@ export interface CaseRepository {
 
 const SUBJECT_MAX_ROWS = 100;
 const COMPARABLE_POOL_CAP = 500;
+const COMPARABLE_SALES_MAX_ROWS = 2500;
 
 const PARCEL_SELECT = [
   "pin",
@@ -178,6 +179,19 @@ function parseSaleDate(value: unknown): string | null {
   }
   const [, month, day, year] = match;
   return `${year}-${month?.padStart(2, "0")}-${day?.padStart(2, "0")}`;
+}
+
+function saleFromRow(row: JsonRecord): Sale | null {
+  const saleDate = parseSaleDate(pick(row, "sale_date"));
+  const salePrice = numberValue(pick(row, "sale_price"));
+  if (!saleDate || salePrice === null || salePrice <= 1000) {
+    return null;
+  }
+  return { saleDate, salePrice, source: "recorded sale" };
+}
+
+function latestSale(sales: Sale[]): Sale | null {
+  return [...sales].sort((a, b) => b.saleDate.localeCompare(a.saleDate))[0] ?? null;
 }
 
 function logInternalWarning(pin: string, warning: SocrataWarning): void {
@@ -387,17 +401,49 @@ export class SocrataRepository implements CaseRepository {
     const warnings: string[] = [];
     collectSocrataWarnings(response, warnings, pin);
     const sales = response.rows
-      .map((row) => {
-        const saleDate = parseSaleDate(pick(row, "sale_date"));
-        const salePrice = numberValue(pick(row, "sale_price"));
-        if (!saleDate || salePrice === null || salePrice <= 1000) {
-          return null;
-        }
-        return { saleDate, salePrice, source: "recorded sale" };
-      })
+      .map((row) => saleFromRow(row))
       .filter((sale): sale is Sale => sale !== null)
       .sort((a, b) => b.saleDate.localeCompare(a.saleDate));
     return [sales, warnings];
+  }
+
+  private async loadComparableSales(pins: string[], pinForWarnings: string) {
+    const uniquePins = unique(pins).slice(0, COMPARABLE_POOL_CAP);
+    const salesByPin = new Map<string, Sale>();
+    if (uniquePins.length === 0) {
+      return [salesByPin, []] as const;
+    }
+    const response = await this.client.fetchAll(
+      "parcel_sales",
+      {
+        $select: SALES_SELECT,
+        $where: `pin in(${uniquePins.map((pin) => `'${pin}'`).join(",")})`,
+      },
+      { maxRows: COMPARABLE_SALES_MAX_ROWS },
+    );
+    const warnings: string[] = [];
+    collectSocrataWarnings(response, warnings, pinForWarnings);
+    const grouped = new Map<string, Sale[]>();
+    for (const row of response.rows) {
+      if (!row.pin) {
+        continue;
+      }
+      const sale = saleFromRow(row);
+      if (!sale) {
+        continue;
+      }
+      try {
+        const pin = normalizePin(String(row.pin));
+        grouped.set(pin, [...(grouped.get(pin) ?? []), sale]);
+      } catch {}
+    }
+    for (const [pin, sales] of grouped.entries()) {
+      const sale = latestSale(sales);
+      if (sale) {
+        salesByPin.set(pin, sale);
+      }
+    }
+    return [salesByPin, warnings] as const;
   }
 
   private async loadComparables(parcel: Parcel): Promise<[Comparable[], string[]]> {
@@ -506,6 +552,15 @@ export class SocrataRepository implements CaseRepository {
 
     const avRowsByPin = groupByPin(avs);
     const universeByPin = groupByPin(universeRows);
+    const comparablePins = unique(
+      chars
+        .map((row) => row.pin)
+        .filter((pin): pin is string | number => pin !== null && pin !== undefined && pin !== "")
+        .map((pin) => normalizePin(String(pin)))
+        .filter((pin) => pin !== parcel.pin),
+    );
+    const [salesByPin, salesWarnings] = await this.loadComparableSales(comparablePins, parcel.pin);
+    warnings.push(...salesWarnings);
     const comps: Comparable[] = [];
     for (const row of chars) {
       if (!row.pin) {
@@ -518,12 +573,16 @@ export class SocrataRepository implements CaseRepository {
       const universe = universeByPin.has(compPin)
         ? latestRow(universeByPin.get(compPin) ?? [])
         : {};
+      const sale = salesByPin.get(compPin);
       comps.push({
         pin: compPin,
         pinFormatted: formatPin(compPin),
         address: "",
+        propertyClass: nullableString(pick(universe, "class") ?? pick(row, "class")),
         buildingSqft: numberValue(pick(row, "char_bldg_sf", "bldg_sf")),
         yearBuilt: intValue(pick(row, "char_yrblt", "yrblt")),
+        saleDate: sale?.saleDate ?? null,
+        salePrice: sale?.salePrice ?? null,
         assessmentYear,
         av: totalAv,
         improvementAv,

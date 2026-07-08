@@ -35,8 +35,11 @@ export interface Comparable {
   pin: string;
   pinFormatted: string;
   address: string;
+  propertyClass: string | null;
   buildingSqft: number | null;
   yearBuilt: number | null;
+  saleDate: string | null;
+  salePrice: number | null;
   assessmentYear: number | null;
   av: number | null;
   improvementAv: number | null;

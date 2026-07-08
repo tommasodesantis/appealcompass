@@ -1,3 +1,5 @@
+import { assessmentTypeLabel } from "../domain/comparableDisplay";
+
 type CellValue = string | number | null;
 
 interface StyledCell {
@@ -40,10 +42,15 @@ interface WorkbookPayload {
       exhibit: Array<{
         avPerSqft: number;
         distanceKm: number | null;
+        similarity: number;
         comparable: {
           pinFormatted: string;
+          propertyClass: string | null;
+          neighborhood: string | null;
           buildingSqft: number | null;
           yearBuilt: number | null;
+          saleDate: string | null;
+          salePrice: number | null;
           assessmentYear: number | null;
           av: number | null;
           improvementAv: number | null;
@@ -111,7 +118,7 @@ function sheetXml(rows: RowInput[]): string {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews><sheetView workbookViewId="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="15"/>
-  <cols><col min="1" max="8" width="22" customWidth="1"/></cols>
+  <cols><col min="1" max="11" width="22" customWidth="1"/></cols>
   <sheetData>${rowXml}</sheetData>
 </worksheet>`;
 }
@@ -161,18 +168,11 @@ function stylesXml(): string {
 </styleSheet>`;
 }
 
-function metricValue(
-  payload: WorkbookPayload,
-  comp: { av: number | null; improvementAv: number | null },
-) {
-  const profile = payload.evidence.comparableAnalysis.profileKey;
-  return profile === "bor" || profile === "ptab" ? comp.improvementAv : comp.av;
-}
-
 function rowsForPayload(payload: WorkbookPayload): RowInput[] {
   const parcel = payload.case.parcel;
   const comps = payload.evidence.comparableAnalysis;
   const savings = payload.evidence.savingsAssumptions;
+  const assessmentType = assessmentTypeLabel(comps.profileKey);
   return [
     [{ value: "Subject Property Summary", style: 1 }],
     ["PIN", parcel.pinFormatted],
@@ -185,21 +185,29 @@ function rowsForPayload(payload: WorkbookPayload): RowInput[] {
     [{ value: "Comparable Exhibit", style: 1 }],
     [
       { value: "PIN", style: 2 },
-      { value: "Sqft", style: 2 },
-      { value: "Built Year", style: 2 },
-      { value: "Assessment Year", style: 2 },
-      { value: "Metric", style: 2 },
-      { value: "Metric/sqft", style: 2 },
       { value: "Distance km", style: 2 },
+      { value: "Neighborhood", style: 2 },
+      { value: "Property class", style: 2 },
+      { value: "Building sqft", style: 2 },
+      { value: "Year built", style: 2 },
+      { value: "Sale date", style: 2 },
+      { value: "Sale price", style: 2 },
+      { value: "Assessment type", style: 2 },
+      { value: "Assessment $/sqft", style: 2 },
+      { value: "Similarity score", style: 2 },
     ],
     ...comps.exhibit.map((item) => [
       item.comparable.pinFormatted,
+      item.distanceKm,
+      item.comparable.neighborhood,
+      item.comparable.propertyClass,
       item.comparable.buildingSqft,
       item.comparable.yearBuilt,
-      item.comparable.assessmentYear,
-      metricValue(payload, item.comparable),
+      item.comparable.saleDate,
+      item.comparable.salePrice,
+      assessmentType,
       item.avPerSqft,
-      item.distanceKm,
+      item.similarity,
     ]),
     [],
     [{ value: "Analysis Stats", style: 1 }],

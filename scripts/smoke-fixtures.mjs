@@ -52,7 +52,7 @@ const checks = [
   {
     label: "print assessor comps",
     path: `/print?demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&${requiredStepOne}`,
-    expect: ["Built Year", "Assessment Year", "Back to Appeal Compass"],
+    expect: ["Year built", "Assessment $/sqft", "Back to Appeal Compass"],
   },
 ];
 

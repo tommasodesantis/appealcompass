@@ -47,6 +47,12 @@ test("comparable analysis known fixture is strong", () => {
   expect(comps.percentile ?? 0).toBeGreaterThanOrEqual(75);
   expect(comps.gapPct).not.toBeNull();
   expect(comps.gapPct ?? 0).toBeGreaterThan(10);
+  const compWithSale = comps.exhibit.find(
+    (item) => item.comparable.pinFormatted === "03-00-000-000-0002",
+  );
+  expect(compWithSale?.comparable.propertyClass).toBe("203");
+  expect(compWithSale?.comparable.saleDate).toBe("2024-08-10");
+  expect(compWithSale?.comparable.salePrice).toBe(430000);
 });
 
 test("condo degrades after measuring empty pool", () => {

@@ -26,6 +26,8 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
   estimated savings assumptions, and a venue-specific checklist.
 - Uses an approximate parcel-specific Cook County Clerk tax-code rate when available, otherwise
   labels the 10% county default assumption used for rough savings estimates.
+- Shows comparable PINs, distance, neighborhood, class, building facts, latest usable sale, selected
+  assessment metric, assessment dollars per square foot, and similarity score.
 - Produces a printable evidence packet at `/print`.
 - Downloads the comparable exhibit and savings assumptions as a `.xlsx` workbook.
 - Provides a Turnstile-protected problem-reporting form when deployment secrets are configured.

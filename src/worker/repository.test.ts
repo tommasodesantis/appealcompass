@@ -64,6 +64,8 @@ test("SocrataRepository filters internal Socrata warnings and surfaces missing l
 });
 
 class EnrichedComparableClient {
+  comparableSalesQueries = 0;
+
   async fetchAll(datasetKey: string, params: Record<string, string>): Promise<SocrataResponse> {
     const where = params.$where ?? "";
     if (datasetKey === "parcel_universe" && where.includes("pin='03000000000001'")) {
@@ -113,8 +115,32 @@ class EnrichedComparableClient {
         warnings: [],
       };
     }
-    if (datasetKey === "parcel_sales") {
+    if (datasetKey === "parcel_sales" && where.includes("pin='03000000000001'")) {
       return { rows: [], warnings: [] };
+    }
+    if (datasetKey === "parcel_sales" && where.includes("pin in(")) {
+      this.comparableSalesQueries += 1;
+      expect(where).toContain("'03000000000002'");
+      return {
+        rows: [
+          {
+            pin: "03000000000002",
+            sale_date: "2021-01-15T00:00:00.000",
+            sale_price: "300000",
+          },
+          {
+            pin: "03000000000002",
+            sale_date: "2024-05-02T00:00:00.000",
+            sale_price: "425000",
+          },
+          {
+            pin: "03000000000002",
+            sale_date: "2025-05-02T00:00:00.000",
+            sale_price: "1",
+          },
+        ],
+        warnings: [],
+      };
     }
     if (datasetKey === "res_characteristics") {
       return {
@@ -171,7 +197,8 @@ class EnrichedComparableClient {
 }
 
 test("SocrataRepository enriches live comparables without address placeholders", async () => {
-  const repo = new SocrataRepository(new EnrichedComparableClient() as never);
+  const client = new EnrichedComparableClient();
+  const repo = new SocrataRepository(client as never);
   const caseFile = await repo.loadCaseByPin("03-00-000-000-0001");
   expect(caseFile.parcel.currentImprovementAv).toBe(50000);
   expect(caseFile.parcel.taxCode).toBe("10001");
@@ -180,11 +207,15 @@ test("SocrataRepository enriches live comparables without address placeholders",
   expect(comp?.address).toBe("");
   expect(caseFile.dataWarnings.join("\n")).not.toContain("address");
   expect(comp?.neighborhood).toBe("0101");
+  expect(comp?.propertyClass).toBe("203");
   expect(comp?.lat).toBe(41.9902);
   expect(comp?.lon).toBe(-87.6972);
+  expect(comp?.saleDate).toBe("2024-05-02");
+  expect(comp?.salePrice).toBe(425000);
   expect(comp?.assessmentYear).toBe(2025);
   expect(comp?.improvementAv).toBe(32000);
   expect(comp?.landSqft).toBe(3700);
   expect(comp?.style).toBe("1 Story|Frame|Average");
   expect(comp?.amenityCount).toBe(1);
+  expect(client.comparableSalesQueries).toBe(1);
 });

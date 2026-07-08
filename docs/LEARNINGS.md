@@ -87,7 +87,7 @@ tests, and user-facing copy.
 | Parcel universe | `nj4t-kc8j` | PIN, class, township, township code, neighborhood, tax code, coordinates, ZIP, geography. Comparable pool rows may not include street addresses. |
 | Assessed values | `uzyt-m557` | `mailed_tot`, `certified_tot`, `board_tot`, `mailed_bldg`, `certified_bldg`, `board_bldg`, `year` or `tax_year`. Configured-year rows may lack value fields. |
 | Residential characteristics | `x54s-btds` | Building square footage, land square footage, year built, residential type, exterior wall, construction quality, beds, baths, amenities. Condo unit data can be sparse. |
-| Parcel sales | `wvhk-k5uv` | Sale date and sale price. Ignore unusable or nominal prices. |
+| Parcel sales | `wvhk-k5uv` | Sale date and sale price for the subject and comparable display. Ignore unusable or nominal prices. Comparable sales must be fetched with one bounded `pin in (...)` query for the comparable pool, not one request per comparable. |
 | Clerk tax-code rates | manual Clerk XLSX | `Code24` and composite `CodeRate24` from the Cook County Clerk 2024 Tax Code Agency Rate file, retrieved 2026-07-08 from `https://www.cookcountyclerkil.gov/sites/default/files/2026-04/2024-tax-code-agency-rate-file.xlsx`. A current Socrata tax-rate mapping API was not verified during the Step 6 research pass. |
 
 ## Tax Rate Assumptions
