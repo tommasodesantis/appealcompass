@@ -94,6 +94,23 @@ interface CasePayload {
       medianAvPerSqft: number | null;
       percentile: number | null;
       gapPct: number | null;
+      pool: Array<{
+        avPerSqft: number;
+        distanceKm: number | null;
+        similarity: number;
+        comparable: {
+          pinFormatted: string;
+          propertyClass: string | null;
+          neighborhood: string | null;
+          buildingSqft: number | null;
+          yearBuilt: number | null;
+          saleDate: string | null;
+          salePrice: number | null;
+          assessmentYear: number | null;
+          av: number | null;
+          improvementAv: number | null;
+        };
+      }>;
       exhibit: Array<{
         avPerSqft: number;
         distanceKm: number | null;

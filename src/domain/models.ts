@@ -111,6 +111,7 @@ export interface ComparableAnalysis {
   medianAvPerSqft: number | null;
   percentile: number | null;
   gapPct: number | null;
+  pool: ComparableExhibit[];
   exhibit: ComparableExhibit[];
 }
 

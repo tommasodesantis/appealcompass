@@ -29,7 +29,8 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
 - Shows comparable PINs, distance, neighborhood, class, building facts, latest usable sale, selected
   assessment metric, assessment dollars per square foot, and similarity score.
 - Produces a concise printable comparable-analysis packet at `/print`.
-- Downloads the comparable exhibit and savings assumptions as a `.xlsx` workbook.
+- Downloads the lower-assessed comparable exhibit, full selected similar-home pool, and savings
+  assumptions as a `.xlsx` workbook.
 - Provides a Turnstile-protected problem-reporting form when deployment secrets are configured.
 
 ## What It Does Not Do

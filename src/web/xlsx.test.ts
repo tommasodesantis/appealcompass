@@ -51,7 +51,12 @@ test("buildComparableWorkbook creates a real XLSX with expected exhibit sections
 
   expect(entries.has("[Content_Types].xml")).toBe(true);
   expect(entries.has("xl/workbook.xml")).toBe(true);
+  expect(entries.has("xl/worksheets/sheet2.xml")).toBe(true);
+  expect(entries.get("[Content_Types].xml") ?? "").toContain("/xl/worksheets/sheet2.xml");
+  expect(entries.get("xl/workbook.xml") ?? "").toContain("Similar Homes");
+  expect(entries.get("xl/_rels/workbook.xml.rels") ?? "").toContain("worksheets/sheet2.xml");
   const sheet = entries.get("xl/worksheets/sheet1.xml") ?? "";
+  const similarHomes = entries.get("xl/worksheets/sheet2.xml") ?? "";
   expect(sheet).toContain("Subject Property Summary");
   expect(sheet).toContain("Comparable Exhibit");
   expect(sheet).toContain("Distance km");
@@ -71,4 +76,9 @@ test("buildComparableWorkbook creates a real XLSX with expected exhibit sections
   expect(sheet).toContain("approximate parcel-specific rate 7.7774%");
   expect(sheet).toContain("2024-08-10");
   expect(sheet).toContain("03-00-000-000-0002");
+  expect(similarHomes).toContain("Similar Homes");
+  expect(similarHomes).toContain("full selected comparable pool");
+  expect(similarHomes).toContain("Assessment $/sqft");
+  expect(similarHomes).toContain("Similarity score");
+  expect(similarHomes).toContain("03-00-000-000-0010");
 });

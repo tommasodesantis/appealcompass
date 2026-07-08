@@ -105,6 +105,8 @@ tests, and user-facing copy.
   specifications, selected venue, comparable method, comparable table, and analysis/savings
   results. Filing checklists, deadline reasoning, warnings, and exemption guidance stay out of the
   packet.
+- The XLSX workbook has two comparable worksheets: the lower-assessed exhibit and the full selected
+  similar-home pool, both using the same comparable column set.
 
 ## Constants To Refresh Annually
 

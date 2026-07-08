@@ -162,6 +162,7 @@ function profiledAnalysis(input: {
   medianAvPerSqft?: number | null;
   percentile?: number | null;
   gap?: number | null;
+  pool?: ComparableExhibit[];
   exhibit?: ComparableExhibit[];
 }): ComparableAnalysis {
   return {
@@ -178,6 +179,7 @@ function profiledAnalysis(input: {
     medianAvPerSqft: input.medianAvPerSqft ?? null,
     percentile: input.percentile ?? null,
     gapPct: input.gap ?? null,
+    pool: input.pool ?? [],
     exhibit: input.exhibit ?? [],
   };
 }
@@ -278,6 +280,29 @@ function condoReliability(
   return { shouldRun: true, warnings: [], missingRate };
 }
 
+function comparableRows(
+  caseFile: CaseFile,
+  comps: Comparable[],
+  profile: ComparableProfile,
+): ComparableExhibit[] {
+  const parcel = caseFile.parcel;
+  return comps
+    .map((comp) => {
+      const compPsf = safeDiv(comparableMetricValue(comp, profile), comp.buildingSqft);
+      if (compPsf === null) {
+        return null;
+      }
+      return {
+        comparable: comp,
+        avPerSqft: compPsf,
+        distanceKm: distanceKm(parcel.lat, parcel.lon, comp.lat, comp.lon),
+        similarity: similarity(caseFile, comp),
+      };
+    })
+    .filter((item): item is ComparableExhibit => item !== null)
+    .sort((a, b) => a.similarity - b.similarity);
+}
+
 export function analyzeComparables(
   caseFile: CaseFile,
   maxComps = 10,
@@ -359,6 +384,8 @@ export function analyzeComparables(
     }
   }
 
+  const poolRows = comparableRows(caseFile, selected, profile);
+
   if (selected.length < profile.minimumComparables) {
     return profiledAnalysis({
       status: "insufficient_data",
@@ -368,6 +395,7 @@ export function analyzeComparables(
       missingDataRate,
       scope,
       poolSize: selected.length,
+      pool: poolRows,
     });
   }
 
@@ -383,19 +411,7 @@ export function analyzeComparables(
   const medianPsf = medianValue(avPsfValues);
   const percentile = percentileRank(subjectPsf, avPsfValues);
   const gap = gapPct(subjectPsf, avPsfValues);
-  const exhibits: ComparableExhibit[] = [];
-  for (const comp of selected) {
-    const compPsf = safeDiv(comparableMetricValue(comp, profile), comp.buildingSqft);
-    if (compPsf === null || compPsf >= subjectPsf) {
-      continue;
-    }
-    exhibits.push({
-      comparable: comp,
-      avPerSqft: compPsf,
-      distanceKm: distanceKm(parcel.lat, parcel.lon, comp.lat, comp.lon),
-      similarity: similarity(caseFile, comp),
-    });
-  }
+  const exhibits = poolRows.filter((item) => item.avPerSqft < subjectPsf).slice(0, maxComps);
 
   return profiledAnalysis({
     status: "ok",
@@ -409,7 +425,8 @@ export function analyzeComparables(
     medianAvPerSqft: medianPsf,
     percentile,
     gap,
-    exhibit: exhibits.sort((a, b) => a.similarity - b.similarity).slice(0, maxComps),
+    pool: poolRows,
+    exhibit: exhibits,
   });
 }
 

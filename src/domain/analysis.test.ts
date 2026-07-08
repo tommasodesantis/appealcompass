@@ -43,10 +43,17 @@ test("comparable analysis known fixture is strong", () => {
   expect(comps.status).toBe("ok");
   expect(comps.profileKey).toBe("assessor");
   expect(comps.poolSize).toBe(10);
+  expect(comps.pool).toHaveLength(10);
   expect(comps.percentile).not.toBeNull();
   expect(comps.percentile ?? 0).toBeGreaterThanOrEqual(75);
   expect(comps.gapPct).not.toBeNull();
   expect(comps.gapPct ?? 0).toBeGreaterThan(10);
+  expect(comps.pool.some((item) => item.comparable.pinFormatted === "03-00-000-000-0010")).toBe(
+    true,
+  );
+  expect(comps.exhibit.some((item) => item.comparable.pinFormatted === "03-00-000-000-0010")).toBe(
+    false,
+  );
   const compWithSale = comps.exhibit.find(
     (item) => item.comparable.pinFormatted === "03-00-000-000-0002",
   );

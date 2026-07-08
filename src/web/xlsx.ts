@@ -10,6 +10,26 @@ interface StyledCell {
 type CellInput = CellValue | StyledCell;
 type RowInput = CellInput[];
 
+interface WorkbookComparable {
+  pinFormatted: string;
+  propertyClass: string | null;
+  neighborhood: string | null;
+  buildingSqft: number | null;
+  yearBuilt: number | null;
+  saleDate: string | null;
+  salePrice: number | null;
+  assessmentYear: number | null;
+  av: number | null;
+  improvementAv: number | null;
+}
+
+interface WorkbookComparableRow {
+  avPerSqft: number;
+  distanceKm: number | null;
+  similarity: number;
+  comparable: WorkbookComparable;
+}
+
 interface WorkbookPayload {
   case: {
     parcel: {
@@ -39,23 +59,8 @@ interface WorkbookPayload {
       medianAvPerSqft: number | null;
       percentile: number | null;
       gapPct: number | null;
-      exhibit: Array<{
-        avPerSqft: number;
-        distanceKm: number | null;
-        similarity: number;
-        comparable: {
-          pinFormatted: string;
-          propertyClass: string | null;
-          neighborhood: string | null;
-          buildingSqft: number | null;
-          yearBuilt: number | null;
-          saleDate: string | null;
-          salePrice: number | null;
-          assessmentYear: number | null;
-          av: number | null;
-          improvementAv: number | null;
-        };
-      }>;
+      pool: WorkbookComparableRow[];
+      exhibit: WorkbookComparableRow[];
     };
   };
 }
@@ -126,7 +131,7 @@ function sheetXml(rows: RowInput[]): string {
 function workbookXml(): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="Comps" sheetId="1" r:id="rId1"/></sheets>
+  <sheets><sheet name="Comps" sheetId="1" r:id="rId1"/><sheet name="Similar Homes" sheetId="2" r:id="rId2"/></sheets>
 </workbook>`;
 }
 
@@ -134,7 +139,8 @@ function workbookRelsXml(): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`;
 }
 
@@ -152,6 +158,7 @@ function contentTypesXml(): string {
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 </Types>`;
 }
@@ -166,6 +173,38 @@ function stylesXml(): string {
   <cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="1" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
+}
+
+function comparableHeaderRow(): RowInput {
+  return [
+    { value: "PIN", style: 2 },
+    { value: "Distance km", style: 2 },
+    { value: "Neighborhood", style: 2 },
+    { value: "Property class", style: 2 },
+    { value: "Building sqft", style: 2 },
+    { value: "Year built", style: 2 },
+    { value: "Sale date", style: 2 },
+    { value: "Sale price", style: 2 },
+    { value: "Assessment type", style: 2 },
+    { value: "Assessment $/sqft", style: 2 },
+    { value: "Similarity score", style: 2 },
+  ];
+}
+
+function comparableRows(rows: WorkbookComparableRow[], assessmentType: string): RowInput[] {
+  return rows.map((item) => [
+    item.comparable.pinFormatted,
+    item.distanceKm,
+    item.comparable.neighborhood,
+    item.comparable.propertyClass,
+    item.comparable.buildingSqft,
+    item.comparable.yearBuilt,
+    item.comparable.saleDate,
+    item.comparable.salePrice,
+    assessmentType,
+    item.avPerSqft,
+    item.similarity,
+  ]);
 }
 
 function rowsForPayload(payload: WorkbookPayload): RowInput[] {
@@ -183,32 +222,8 @@ function rowsForPayload(payload: WorkbookPayload): RowInput[] {
     ["Implied Market Value", payload.evidence.impliedMarketValue],
     [],
     [{ value: "Comparable Exhibit", style: 1 }],
-    [
-      { value: "PIN", style: 2 },
-      { value: "Distance km", style: 2 },
-      { value: "Neighborhood", style: 2 },
-      { value: "Property class", style: 2 },
-      { value: "Building sqft", style: 2 },
-      { value: "Year built", style: 2 },
-      { value: "Sale date", style: 2 },
-      { value: "Sale price", style: 2 },
-      { value: "Assessment type", style: 2 },
-      { value: "Assessment $/sqft", style: 2 },
-      { value: "Similarity score", style: 2 },
-    ],
-    ...comps.exhibit.map((item) => [
-      item.comparable.pinFormatted,
-      item.distanceKm,
-      item.comparable.neighborhood,
-      item.comparable.propertyClass,
-      item.comparable.buildingSqft,
-      item.comparable.yearBuilt,
-      item.comparable.saleDate,
-      item.comparable.salePrice,
-      assessmentType,
-      item.avPerSqft,
-      item.similarity,
-    ]),
+    comparableHeaderRow(),
+    ...comparableRows(comps.exhibit, assessmentType),
     [],
     [{ value: "Analysis Stats", style: 1 }],
     ["Pool size", comps.poolSize],
@@ -224,6 +239,17 @@ function rowsForPayload(payload: WorkbookPayload): RowInput[] {
     ["Point estimate", savings.point],
     ["High estimate", savings.high],
     ["Formula", "estimated savings = Delta AV x E x r, shown as a +/-20% range; not a promise"],
+  ];
+}
+
+function similarHomesRows(payload: WorkbookPayload): RowInput[] {
+  const comps = payload.evidence.comparableAnalysis;
+  const assessmentType = assessmentTypeLabel(comps.profileKey);
+  return [
+    [{ value: "Similar Homes", style: 1 }],
+    ["This sheet lists the full selected comparable pool, not only the lower-assessed exhibit."],
+    comparableHeaderRow(),
+    ...comparableRows(comps.pool, assessmentType),
   ];
 }
 
@@ -333,5 +359,6 @@ export function buildComparableWorkbook(payload: WorkbookPayload): Uint8Array {
     { path: "xl/_rels/workbook.xml.rels", text: workbookRelsXml() },
     { path: "xl/styles.xml", text: stylesXml() },
     { path: "xl/worksheets/sheet1.xml", text: sheetXml(rowsForPayload(payload)) },
+    { path: "xl/worksheets/sheet2.xml", text: sheetXml(similarHomesRows(payload)) },
   ]);
 }
