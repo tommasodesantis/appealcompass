@@ -31,6 +31,8 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
 - Produces a concise printable comparable-analysis packet at `/print`.
 - Downloads the lower-assessed comparable exhibit, full selected similar-home pool, and savings
   assumptions as a `.xlsx` workbook.
+- Restores the last successful in-tab assessment from `sessionStorage` when a user returns from the
+  print page.
 - Provides a Turnstile-protected problem-reporting form when deployment secrets are configured.
 
 ## What It Does Not Do

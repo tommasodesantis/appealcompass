@@ -107,6 +107,8 @@ tests, and user-facing copy.
   packet.
 - The XLSX workbook has two comparable worksheets: the lower-assessed exhibit and the full selected
   similar-home pool, both using the same comparable column set.
+- The browser stores only the last successful in-tab assessment query and payload in
+  `sessionStorage` so returning from `/print` can rehydrate the form and results without a refetch.
 
 ## Constants To Refresh Annually
 

@@ -8,6 +8,7 @@ import {
   PTAB_OFFICIAL_URL,
 } from "../domain/config";
 import { TURNSTILE_SITE_KEY } from "../domain/publicConfig";
+import { loadAssessmentSnapshot, saveAssessmentSnapshot } from "./sessionState";
 import { buildComparableWorkbook, comparableWorkbookFilename } from "./xlsx";
 
 interface ApiError {
@@ -859,6 +860,10 @@ function renderComparables(payload: CasePayload): string {
 
 function renderResults(payload: CasePayload, query: URLSearchParams): void {
   lastCasePayload = payload;
+  const storage = browserSessionStorage();
+  if (storage) {
+    saveAssessmentSnapshot(storage, query, payload);
+  }
   const subject = payload.case.parcel;
   const subjectAddress = [subject.address, subject.city, subject.zipCode]
     .filter(Boolean)
@@ -976,6 +981,54 @@ async function submitCase(form: HTMLFormElement): Promise<void> {
   const target = document.querySelector<HTMLElement>("#results");
   if (target) {
     target.innerHTML = `<section class="error" role="alert">Enter a PIN.</section>`;
+  }
+}
+
+function setCaseFormFromParams(form: HTMLFormElement, params: URLSearchParams): void {
+  for (const element of Array.from(form.elements)) {
+    if (
+      !(
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLSelectElement ||
+        element instanceof HTMLTextAreaElement
+      )
+    ) {
+      continue;
+    }
+    if (!element.name) {
+      continue;
+    }
+    const value = params.get(element.name);
+    if (element instanceof HTMLInputElement && element.type === "radio") {
+      element.checked = value === element.value;
+      continue;
+    }
+    element.value = value ?? "";
+  }
+  updateConditionalFields(form);
+}
+
+function restoreLastAssessment(): void {
+  const storage = browserSessionStorage();
+  if (!storage) {
+    return;
+  }
+  const snapshot = loadAssessmentSnapshot<CasePayload>(storage);
+  if (!snapshot) {
+    return;
+  }
+  const form = document.querySelector<HTMLFormElement>("#case-form");
+  if (form) {
+    setCaseFormFromParams(form, snapshot.query);
+  }
+  renderResults(snapshot.payload, snapshot.query);
+}
+
+function browserSessionStorage(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
   }
 }
 
@@ -1165,5 +1218,13 @@ document.addEventListener("keydown", (event) => {
     closeTooltips();
   }
 });
+
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    restoreLastAssessment();
+  }
+});
+
+restoreLastAssessment();
 
 document.documentElement.dataset.enhanced = "true";
