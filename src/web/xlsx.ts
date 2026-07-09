@@ -1,4 +1,5 @@
 import { assessmentTypeLabel } from "../domain/comparableDisplay";
+import { filterBySimilarity } from "../domain/similarityBands";
 
 type CellValue = string | number | null;
 
@@ -21,6 +22,8 @@ interface WorkbookComparable {
   assessmentYear: number | null;
   av: number | null;
   improvementAv: number | null;
+  landAv: number | null;
+  landSqft: number | null;
 }
 
 interface WorkbookComparableRow {
@@ -38,8 +41,16 @@ interface WorkbookPayload {
       propertyClass: string;
       townshipName: string;
       buildingSqft: number | null;
+      landSqft: number | null;
+      assessmentYear: number | null;
       currentAv: number | null;
       currentImprovementAv: number | null;
+      currentLandAv: number | null;
+    };
+    userEvidence: {
+      actualSqft: number | null;
+      actualAv: number | null;
+      actualImprovementAv: number | null;
     };
   };
   evidence: {
@@ -56,11 +67,20 @@ interface WorkbookPayload {
       profileKey: string;
       metricLabel: string;
       poolSize: number;
+      subjectAvPerSqft: number | null;
       medianAvPerSqft: number | null;
       percentile: number | null;
       gapPct: number | null;
       pool: WorkbookComparableRow[];
       exhibit: WorkbookComparableRow[];
+    };
+    landAssessment: {
+      subjectLandAvPerSqft: number | null;
+      medianLandAvPerSqft: number | null;
+      percentile: number | null;
+      gapPct: number | null;
+      note: string;
+      flagged: boolean;
     };
   };
 }
@@ -123,7 +143,7 @@ function sheetXml(rows: RowInput[]): string {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews><sheetView workbookViewId="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="15"/>
-  <cols><col min="1" max="11" width="22" customWidth="1"/></cols>
+  <cols><col min="1" max="12" width="22" customWidth="1"/></cols>
   <sheetData>${rowXml}</sheetData>
 </worksheet>`;
 }
@@ -185,13 +205,18 @@ function comparableHeaderRow(): RowInput {
     { value: "Year built", style: 2 },
     { value: "Sale date", style: 2 },
     { value: "Sale price", style: 2 },
-    { value: "Assessment type", style: 2 },
-    { value: "Assessment $/sqft", style: 2 },
+    { value: "Assessment metric", style: 2 },
+    { value: "Improvement AV/sqft", style: 2 },
+    { value: "Compared with subject (%)", style: 2 },
     { value: "Similarity score", style: 2 },
   ];
 }
 
-function comparableRows(rows: WorkbookComparableRow[], assessmentType: string): RowInput[] {
+function comparableRows(
+  rows: WorkbookComparableRow[],
+  assessmentType: string,
+  subjectAvPerSqft: number | null,
+): RowInput[] {
   return rows.map((item) => [
     item.comparable.pinFormatted,
     item.distanceKm,
@@ -203,33 +228,73 @@ function comparableRows(rows: WorkbookComparableRow[], assessmentType: string): 
     item.comparable.salePrice,
     assessmentType,
     item.avPerSqft,
+    subjectAvPerSqft && subjectAvPerSqft > 0
+      ? ((item.avPerSqft - subjectAvPerSqft) / subjectAvPerSqft) * 100
+      : null,
     item.similarity,
   ]);
 }
 
-function rowsForPayload(payload: WorkbookPayload): RowInput[] {
+function rowsForPayload(payload: WorkbookPayload, maxSimilarity: number | null): RowInput[] {
   const parcel = payload.case.parcel;
   const comps = payload.evidence.comparableAnalysis;
+  const land = payload.evidence.landAssessment;
   const savings = payload.evidence.savingsAssumptions;
+  const userEvidence = payload.case.userEvidence;
   const assessmentType = assessmentTypeLabel(comps.profileKey);
+  const selectedPool = filterBySimilarity(comps.pool, maxSimilarity);
   return [
     [{ value: "Subject Property Summary", style: 1 }],
     ["PIN", parcel.pinFormatted],
     ["Class / Township", `${parcel.propertyClass} / ${parcel.townshipName}`],
-    ["Building Sqft", parcel.buildingSqft],
-    ["Total AV", parcel.currentAv],
-    ["Improvement AV", parcel.currentImprovementAv],
+    ["Assessment year", parcel.assessmentYear],
+    ["Building Sqft", parcel.buildingSqft ?? userEvidence.actualSqft],
+    [
+      "Building Sqft source",
+      parcel.buildingSqft !== null
+        ? "Public record"
+        : userEvidence.actualSqft !== null
+          ? "User-supplied"
+          : "Not available",
+    ],
+    ["Land Sqft", parcel.landSqft],
+    ["Total AV", parcel.currentAv ?? userEvidence.actualAv],
+    [
+      "Total AV source",
+      parcel.currentAv !== null
+        ? "Public record"
+        : userEvidence.actualAv !== null
+          ? "User-supplied"
+          : "Not available",
+    ],
+    ["Improvement AV", parcel.currentImprovementAv ?? userEvidence.actualImprovementAv],
+    [
+      "Improvement AV source",
+      parcel.currentImprovementAv !== null
+        ? "Public record"
+        : userEvidence.actualImprovementAv !== null
+          ? "User-supplied"
+          : "Not available",
+    ],
+    ["Land AV", parcel.currentLandAv],
     ["Implied Market Value", payload.evidence.impliedMarketValue],
     [],
-    [{ value: "Comparable Exhibit", style: 1 }],
+    [{ value: "Selected Comparable Homes", style: 1 }],
+    ["Includes selected homes assessed above the subject for transparent comparison."],
     comparableHeaderRow(),
-    ...comparableRows(comps.exhibit, assessmentType),
+    ...comparableRows(selectedPool, assessmentType, comps.subjectAvPerSqft),
     [],
     [{ value: "Analysis Stats", style: 1 }],
     ["Pool size", comps.poolSize],
-    ["Median assessment $/sqft", comps.medianAvPerSqft],
+    ["Median Improvement AV/sqft", comps.medianAvPerSqft],
     ["Percentile", comps.percentile],
     ["Gap %", comps.gapPct],
+    ["Land check", land.note],
+    ["Subject Land AV/sqft", land.subjectLandAvPerSqft],
+    ["Median comparable Land AV/sqft", land.medianLandAvPerSqft],
+    ["Land percentile", land.percentile],
+    ["Land gap %", land.gapPct],
+    ["Land issue flagged", land.flagged ? "Yes" : "No"],
     [],
     [{ value: "Savings Calculation", style: 1 }],
     ["State equalizer", savings.stateEqualizer],
@@ -247,9 +312,9 @@ function similarHomesRows(payload: WorkbookPayload): RowInput[] {
   const assessmentType = assessmentTypeLabel(comps.profileKey);
   return [
     [{ value: "Similar Homes", style: 1 }],
-    ["This sheet lists the full selected comparable pool, not only the lower-assessed exhibit."],
+    ["This sheet lists the full selected comparable pool, including higher-assessed rows."],
     comparableHeaderRow(),
-    ...comparableRows(comps.pool, assessmentType),
+    ...comparableRows(comps.pool, assessmentType, comps.subjectAvPerSqft),
   ];
 }
 
@@ -351,14 +416,17 @@ export function comparableWorkbookFilename(payload: WorkbookPayload): string {
   return `appeal-compass-comps-${payload.case.parcel.pin}.xlsx`;
 }
 
-export function buildComparableWorkbook(payload: WorkbookPayload): Uint8Array {
+export function buildComparableWorkbook(
+  payload: WorkbookPayload,
+  maxSimilarity: number | null = null,
+): Uint8Array {
   return zip([
     { path: "[Content_Types].xml", text: contentTypesXml() },
     { path: "_rels/.rels", text: rootRelsXml() },
     { path: "xl/workbook.xml", text: workbookXml() },
     { path: "xl/_rels/workbook.xml.rels", text: workbookRelsXml() },
     { path: "xl/styles.xml", text: stylesXml() },
-    { path: "xl/worksheets/sheet1.xml", text: sheetXml(rowsForPayload(payload)) },
+    { path: "xl/worksheets/sheet1.xml", text: sheetXml(rowsForPayload(payload, maxSimilarity)) },
     { path: "xl/worksheets/sheet2.xml", text: sheetXml(similarHomesRows(payload)) },
   ]);
 }

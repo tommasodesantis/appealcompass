@@ -1,13 +1,4 @@
 import { routeCase } from "./routing";
-import type { AppealStatusInput } from "./routing";
-
-const noneFiled: AppealStatusInput = {
-  assessorAppealFiled: false,
-  assessorDecisionReceived: null,
-  borAppealFiled: false,
-  borDecisionReceived: null,
-  borDecisionDate: null,
-};
 
 test.each([
   ["Berwyn", "2026-07-06", "2026-07-06"],
@@ -18,103 +9,121 @@ test.each([
   ["Elk Grove", "2026-07-06", "2026-08-04"],
   ["Stickney", "2026-07-06", "2026-08-12"],
 ])("reports %s Assessor window when Assessor is selected", (township, today, deadline) => {
-  const route = routeCase(township, today, "assessor", null, noneFiled);
+  const route = routeCase(township, today, "assessor");
   expect(route.venue).toBe("assessor");
   expect(route.actionStatus).toBe("open");
+  expect(route.deadlineState).toBe("published");
   expect(route.deadline).toBe(deadline);
-  expect(route.reasoning.join(" ")).toContain("You selected the Cook County Assessor");
+  expect(route.deadlines.map((item) => item.label)).toEqual(["Filing opens", "Filing closes"]);
 });
 
-test("reports BOR window when BOR is selected", () => {
-  const route = routeCase("Rogers Park", "2025-07-10", "bor", null, noneFiled);
+test("does not reuse the expired 2025 BOR schedule for Tax Year 2026", () => {
+  const route = routeCase("Rogers Park", "2026-07-10", "bor");
   expect(route.venue).toBe("bor");
-  expect(route.actionStatus).toBe("open");
-  expect(route.deadline).toBe("2025-08-05");
-  expect(route.reasoning.join(" ")).toContain("Evidence deadline: 2025-08-15");
+  expect(route.actionStatus).toBe("upcoming");
+  expect(route.deadlineState).toBe("not_published");
+  expect(route.deadline).toBeNull();
+  expect(route.deadlineLabel).toBe("2026 BOR dates not published yet");
+  expect(route.reasoning.join(" ")).toContain("prior Tax Year 2025 schedule");
 });
 
 test("does not switch to Assessor when BOR is selected during an Assessor window", () => {
-  const route = routeCase("Berwyn", "2026-07-06", "bor", null, noneFiled);
+  const route = routeCase("Berwyn", "2026-07-06", "bor");
   expect(route.venue).toBe("bor");
-  expect(route.actionStatus).toBe("closed");
-  expect(route.deadline).toBe("2025-12-12");
-  expect(route.reasoning.join(" ")).toContain("No configured BOR filing window");
+  expect(route.deadlineState).toBe("not_published");
 });
 
-test("does not switch to BOR when Assessor is selected during a BOR window", () => {
-  const route = routeCase("Rogers Park", "2025-07-10", "assessor", null, noneFiled);
+test("does not switch to BOR when Assessor is selected", () => {
+  const route = routeCase("Rogers Park", "2025-07-10", "assessor");
   expect(route.venue).toBe("assessor");
   expect(route.actionStatus).toBe("upcoming");
   expect(route.deadline).toBe("2026-04-17");
 });
 
-test("selected Assessor venue remains selected when all configured windows are closed", () => {
-  const route = routeCase("Rogers Park", "2027-01-01", "assessor", null, noneFiled);
+test("selected Assessor venue remains selected when its configured window is closed", () => {
+  const route = routeCase("Rogers Park", "2027-01-01", "assessor");
   expect(route.venue).toBe("assessor");
   expect(route.actionStatus).toBe("closed");
+  expect(route.deadlineState).toBe("expired");
   expect(route.deadline).toBe("2026-06-01");
   expect(route.reasoning.some((reason) => reason.includes("Certificate of Error"))).toBe(true);
   expect(route.warnings.some((warning) => warning.includes("past its session end"))).toBe(true);
 });
 
-test("unknown township is honest and non-crashing for selected BOR venue", () => {
-  const route = routeCase("Not A Township", "2025-07-10", "bor", null, noneFiled);
-  expect(route.venue).toBe("bor");
-  expect(route.actionStatus).toBe("closed");
+test("Assessor townships without released dates are labeled clearly", () => {
+  const route = routeCase("Bremen", "2026-07-09", "assessor");
+  expect(route.venue).toBe("assessor");
+  expect(route.actionStatus).toBe("upcoming");
+  expect(route.deadlineState).toBe("not_published");
   expect(route.deadline).toBeNull();
-  expect(route.headline).toContain("BOR window is not currently open");
+  expect(route.deadlineLabel).toBe("Township dates not published yet");
 });
 
-test("PTAB requires a decision date", () => {
+test("unknown township is honest and non-crashing for selected BOR venue", () => {
+  const route = routeCase("Not A Township", "2026-07-10", "bor");
+  expect(route.venue).toBe("bor");
+  expect(route.deadlineState).toBe("not_published");
+  expect(route.deadline).toBeNull();
+});
+
+test("PTAB requires the written notice date when notice was received", () => {
   const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
-    assessorAppealFiled: true,
-    assessorDecisionReceived: true,
-    borAppealFiled: true,
-    borDecisionReceived: true,
-    borDecisionDate: null,
+    borNoticeReceived: true,
+    borNoticeDate: null,
   });
   expect(route.venue).toBe("ptab");
   expect(route.actionStatus).toBe("needs_input");
-  expect(route.reasoning.join(" ")).toContain("refuses to guess");
+  expect(route.deadlineState).toBe("awaiting_notice");
+  expect(route.reasoning.join(" ")).toContain("will not guess");
 });
 
-test("PTAB is eligible from a supplied decision date", () => {
+test("PTAB moves a 30th day that is an Illinois holiday to the next business day", () => {
   const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
-    assessorAppealFiled: true,
-    assessorDecisionReceived: true,
-    borAppealFiled: true,
-    borDecisionReceived: true,
-    borDecisionDate: "2026-05-20",
+    borNoticeReceived: true,
+    borNoticeDate: "2026-05-20",
   });
   expect(route.venue).toBe("ptab");
   expect(route.actionStatus).toBe("open");
-  expect(route.deadline).toBe("2026-06-19");
-  expect(route.daysRemaining).toBe(18);
+  expect(route.deadline).toBe("2026-06-22");
+  expect(route.daysRemaining).toBe(21);
+  expect(route.reasoning.join(" ")).toContain("30th day was 2026-06-19");
 });
 
-test("PTAB expires from a supplied decision date", () => {
+test("PTAB moves a Sunday deadline to Monday", () => {
+  const route = routeCase("Rogers Park", "2026-07-01", "ptab", null, {
+    borNoticeReceived: true,
+    borNoticeDate: "2026-06-19",
+  });
+  expect(route.deadline).toBe("2026-07-20");
+  expect(route.reasoning.join(" ")).toContain("weekend or Illinois legal holiday");
+});
+
+test("PTAB expired state uses the adjusted notice-based date", () => {
   const route = routeCase("Rogers Park", "2026-07-06", "ptab", null, {
-    assessorAppealFiled: true,
-    assessorDecisionReceived: true,
-    borAppealFiled: true,
-    borDecisionReceived: true,
-    borDecisionDate: "2026-05-20",
+    borNoticeReceived: true,
+    borNoticeDate: "2026-05-20",
   });
-  expect(route.venue).toBe("ptab");
   expect(route.actionStatus).toBe("expired");
-  expect(route.deadline).toBe("2026-06-19");
-  expect(route.daysRemaining).toBe(-17);
+  expect(route.deadlineState).toBe("expired");
+  expect(route.deadline).toBe("2026-06-22");
+  expect(route.daysRemaining).toBe(-14);
 });
 
-test("PTAB explains waiting when a BOR appeal is filed but no decision exists", () => {
+test("PTAB explains waiting when the written BOR notice has not arrived", () => {
   const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
-    assessorAppealFiled: true,
-    assessorDecisionReceived: true,
-    borAppealFiled: true,
-    borDecisionReceived: false,
-    borDecisionDate: null,
+    borNoticeReceived: false,
+    borNoticeDate: null,
   });
-  expect(route.venue).toBe("ptab");
   expect(route.actionStatus).toBe("upcoming");
-  expect(route.reasoning.join(" ")).toContain("PTAB becomes available only after");
+  expect(route.deadlineState).toBe("awaiting_notice");
+  expect(route.deadlineLabel).toBe("Waiting for BOR written notice");
+});
+
+test("PTAB explanation identifies the later Cook County transmission rule", () => {
+  const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
+    borNoticeReceived: true,
+    borNoticeDate: "2026-05-21",
+  });
+  expect(route.reasoning.join(" ")).toContain("township's final-action transmission");
+  expect(route.reasoning.join(" ")).toContain("conservative notice-based date");
 });

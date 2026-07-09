@@ -1,3 +1,4 @@
+import { UnsupportedPropertyError } from "../domain/errors";
 import { SocrataRepository } from "./repository";
 import type { SocrataResponse } from "./socrataClient";
 
@@ -109,6 +110,7 @@ class EnrichedComparableClient {
             pin: "03000000000001",
             year: "2025",
             mailed_tot: "60000",
+            mailed_land: "10000",
             mailed_bldg: "50000",
           },
         ],
@@ -169,6 +171,7 @@ class EnrichedComparableClient {
             pin: "03000000000002",
             year: "2025",
             mailed_tot: "40000",
+            mailed_land: "8000",
             mailed_bldg: "32000",
           },
         ],
@@ -201,6 +204,8 @@ test("SocrataRepository enriches live comparables without address placeholders",
   const repo = new SocrataRepository(client as never);
   const caseFile = await repo.loadCaseByPin("03-00-000-000-0001");
   expect(caseFile.parcel.currentImprovementAv).toBe(50000);
+  expect(caseFile.parcel.currentLandAv).toBe(10000);
+  expect(caseFile.parcel.assessmentYear).toBe(2025);
   expect(caseFile.parcel.taxCode).toBe("10001");
   expect(caseFile.comparables).not.toHaveLength(0);
   const comp = caseFile.comparables[0];
@@ -214,8 +219,46 @@ test("SocrataRepository enriches live comparables without address placeholders",
   expect(comp?.salePrice).toBe(425000);
   expect(comp?.assessmentYear).toBe(2025);
   expect(comp?.improvementAv).toBe(32000);
+  expect(comp?.landAv).toBe(8000);
   expect(comp?.landSqft).toBe(3700);
   expect(comp?.style).toBe("1 Story|Frame|Average");
   expect(comp?.amenityCount).toBe(1);
   expect(client.comparableSalesQueries).toBe(1);
 });
+
+class UnsupportedClassClient {
+  calls: string[] = [];
+
+  constructor(private readonly propertyClass: string) {}
+
+  async fetchAll(datasetKey: string): Promise<SocrataResponse> {
+    this.calls.push(datasetKey);
+    if (datasetKey !== "parcel_universe") {
+      throw new Error(`Analysis should stop before ${datasetKey}`);
+    }
+    return {
+      rows: [
+        {
+          pin: "17194110440000",
+          class: this.propertyClass,
+          township_name: "West Chicago",
+          township_code: "77",
+          year: "2026",
+        },
+      ],
+      warnings: [],
+    };
+  }
+}
+
+test.each(["597", "318", "591"])(
+  "SocrataRepository blocks excluded class %s before characteristics and comparables",
+  async (propertyClass) => {
+    const client = new UnsupportedClassClient(propertyClass);
+    const repo = new SocrataRepository(client as never);
+    await expect(repo.loadCaseByPin("17-19-411-044-0000")).rejects.toBeInstanceOf(
+      UnsupportedPropertyError,
+    );
+    expect(client.calls).toEqual(["parcel_universe"]);
+  },
+);

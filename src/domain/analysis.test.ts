@@ -110,6 +110,7 @@ function condoCaseWithMissingRate(missingCount: number, totalCount: number): Cas
         buildingSqft: missing ? null : 980 + index,
         yearBuilt: 1980,
         av: missing ? null : 35000 + index * 1000,
+        improvementAv: missing ? null : 28000 + index * 1000,
         neighborhood: "0199",
         lat: 41.9902 + index * 0.0001,
         lon: -87.6972 - index * 0.0001,
@@ -122,6 +123,7 @@ function condoCaseWithMissingRate(missingCount: number, totalCount: number): Cas
       ...caseFile.parcel,
       propertyClass: "299",
       currentAv: 60000,
+      currentImprovementAv: 50000,
       buildingSqft: 1000,
       yearBuilt: 1980,
       neighborhood: "0199",
@@ -196,6 +198,43 @@ test("comparable analysis excludes candidates outside the subject property class
   );
 });
 
+test("comparable analysis excludes candidates from a different assessment year", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const sameYear = Array.from({ length: 3 }, (_, index) =>
+    makeComparable({
+      pin: `0300000008${index.toString().padStart(4, "0")}`,
+      pinFormatted: `03-00-000-008-${index.toString().padStart(4, "0")}`,
+      address: `${index} SAME YEAR ST`,
+      buildingSqft: 1780 + index * 10,
+      yearBuilt: 1924,
+      improvementAv: 32000 + index * 1000,
+      propertyClass: "203",
+      assessmentYear: caseFile.parcel.assessmentYear,
+      neighborhood: "0101",
+    }),
+  );
+  const mismatchedYear = makeComparable({
+    pin: "03000000089999",
+    pinFormatted: "03-00-000-008-9999",
+    address: "MISMATCHED YEAR ST",
+    buildingSqft: 1800,
+    yearBuilt: 1924,
+    improvementAv: 1000,
+    propertyClass: "203",
+    assessmentYear: (caseFile.parcel.assessmentYear ?? 2025) - 1,
+    neighborhood: "0101",
+  });
+  const analysis = analyzeComparables({
+    ...caseFile,
+    comparables: [mismatchedYear, ...sameYear],
+  });
+  expect(analysis.status).toBe("ok");
+  expect(analysis.pool.map((item) => item.comparable.pinFormatted)).not.toContain(
+    mismatchedYear.pinFormatted,
+  );
+  expect(analysis.warnings.some((warning) => warning.includes("assessment year"))).toBe(true);
+});
+
 test("condo degrades after measuring empty pool", () => {
   const caseFile = loadFixtureCase("03000000000020");
   const comps = analyzeComparables(caseFile);
@@ -229,7 +268,7 @@ test("missing characteristics degrade without crashing", () => {
   const caseFile = loadFixtureCase("03000000000030");
   const comps = analyzeComparables(caseFile);
   expect(comps.status).toBe("insufficient_data");
-  expect(comps.note).toContain("Actual sqft field");
+  expect(comps.missingFields.map((field) => field.name)).toContain("actualSqft");
 });
 
 test("missing sqft with user override completes and labels source", () => {
@@ -253,7 +292,7 @@ test("public sqft wins over user sqft and conflicting user sqft creates descript
   const analysis = analyzeComparables(overrideCase);
   expect(analysis.status).toBe("ok");
   expect(analysis.subjectAvPerSqft).toBe(
-    (overrideCase.parcel.currentAv ?? 0) / (overrideCase.parcel.buildingSqft ?? 1),
+    (overrideCase.parcel.currentImprovementAv ?? 0) / (overrideCase.parcel.buildingSqft ?? 1),
   );
   const evidence = buildEvidenceSummary(overrideCase, 0.1);
   expect(
@@ -293,17 +332,84 @@ test("user total AV is fallback-only when public total AV is missing", () => {
   const evidence = buildEvidenceSummary(overrideCase, 0.1);
   expect(evidence.impliedMarketValue).toBe(500000);
   const analysis = analyzeComparables(overrideCase);
-  expect(analysis.warnings.some((warning) => warning.includes("user-supplied current total"))).toBe(
-    true,
-  );
+  expect(analysis.status).toBe("ok");
 });
 
-test("missing total AV guidance names actual AV flag", () => {
+test("missing total AV does not block improvement uniformity analysis", () => {
   const caseFile = loadFixtureCase("03000000000001");
   const missingAvCase = { ...caseFile, parcel: { ...caseFile.parcel, currentAv: null } };
   const analysis = analyzeComparables(missingAvCase);
-  expect(analysis.status).toBe("insufficient_data");
-  expect(analysis.note).toContain("Actual total AV field");
+  expect(analysis.status).toBe("ok");
+  expect(analysis.missingFields.map((field) => field.name)).not.toContain("actualAv");
+});
+
+test("Assessor total AV per sqft alone does not create uniformity evidence", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const parcel = {
+    ...caseFile.parcel,
+    currentAv: 120000,
+    currentImprovementAv: 36000,
+    currentLandAv: 10000,
+    priorFinalAv: 120000,
+  };
+  const comps = Array.from({ length: 5 }, (_, index) =>
+    makeComparable({
+      pin: `0300000006${index.toString().padStart(4, "0")}`,
+      pinFormatted: `03-00-000-006-${index.toString().padStart(4, "0")}`,
+      address: `${index} TOTAL ONLY ST`,
+      propertyClass: "203",
+      buildingSqft: 1800,
+      yearBuilt: 1924,
+      av: 40000,
+      improvementAv: 36000,
+      landAv: 10000,
+      landSqft: 3750,
+      assessmentYear: parcel.assessmentYear,
+      neighborhood: "0101",
+    }),
+  );
+  const evidence = buildEvidenceSummary(
+    { ...caseFile, parcel, comparables: comps, subjectSales: [] },
+    0.1,
+    "assessor",
+  );
+  expect(evidence.arguments.some((argument) => argument.argumentType === "uniformity")).toBe(false);
+  expect(evidence.tier).toBe("LIMITED");
+});
+
+test("land component flags high Land AV per land sqft separately", () => {
+  const caseFile = loadFixtureCase("03000000000001");
+  const parcel = {
+    ...caseFile.parcel,
+    currentImprovementAv: 36000,
+    currentLandAv: 30000,
+    priorFinalAv: 60000,
+  };
+  const comps = Array.from({ length: 5 }, (_, index) =>
+    makeComparable({
+      pin: `0300000007${index.toString().padStart(4, "0")}`,
+      pinFormatted: `03-00-000-007-${index.toString().padStart(4, "0")}`,
+      address: `${index} LAND ST`,
+      propertyClass: "203",
+      buildingSqft: 1800,
+      yearBuilt: 1924,
+      av: 46000,
+      improvementAv: 36000,
+      landAv: 10000 + index * 100,
+      landSqft: 3750,
+      assessmentYear: parcel.assessmentYear,
+      neighborhood: "0101",
+    }),
+  );
+  const evidence = buildEvidenceSummary(
+    { ...caseFile, parcel, comparables: comps, subjectSales: [] },
+    0.1,
+    "assessor",
+  );
+  expect(evidence.landAssessment.flagged).toBe(true);
+  expect(evidence.arguments.some((argument) => argument.argumentType === "land_component")).toBe(
+    true,
+  );
 });
 
 test("BOR missing improvement AV guidance names improvement flag", () => {
@@ -311,10 +417,14 @@ test("BOR missing improvement AV guidance names improvement flag", () => {
   const comps = caseFile.comparables
     .filter((comp) => comp.av !== null)
     .map((comp) => ({ ...comp, improvementAv: comp.av }));
-  const missingImprovementCase = { ...caseFile, comparables: comps };
+  const missingImprovementCase = {
+    ...caseFile,
+    parcel: { ...caseFile.parcel, currentImprovementAv: null },
+    comparables: comps,
+  };
   const analysis = analyzeComparables(missingImprovementCase, 10, BOR_PROFILE);
   expect(analysis.status).toBe("insufficient_data");
-  expect(analysis.note).toContain("Actual improvement AV field");
+  expect(analysis.missingFields.map((field) => field.name)).toContain("actualImprovementAv");
 });
 
 test("BOR user improvement AV override completes without mutating official record", () => {
@@ -324,6 +434,7 @@ test("BOR user improvement AV override completes without mutating official recor
     .map((comp) => ({ ...comp, improvementAv: comp.av }));
   const overrideCase = {
     ...withUserEvidence(caseFile, defaultUserEvidence({ actualImprovementAv: 60000 })),
+    parcel: { ...caseFile.parcel, currentImprovementAv: null },
     comparables: comps,
     subjectSales: [],
   };
@@ -411,7 +522,7 @@ test("BOR profile uses improvement assessment metric", () => {
   );
   expect(analysis.status).toBe("ok");
   expect(analysis.profileKey).toBe("bor");
-  expect(analysis.metricLabel).toBe("building assessment");
+  expect(analysis.metricLabel).toBe("Improvement AV");
   expect(analysis.subjectAvPerSqft).toBe(50);
   expect(analysis.medianAvPerSqft).not.toBeNull();
   expect(analysis.medianAvPerSqft ?? 0).toBeLessThan(analysis.subjectAvPerSqft ?? 0);
@@ -477,6 +588,7 @@ test("evidence summary supporting uniformity is moderate", () => {
       buildingSqft: 1800,
       yearBuilt: 1924,
       av: 1800 * psf,
+      improvementAv: 1800 * psf,
       neighborhood: "0101",
     }),
   );
@@ -575,6 +687,6 @@ test("limited evidence path has no forced recommendation", () => {
   };
   const evidence = buildEvidenceSummary(limitedCase, 0.1);
   expect(evidence.tier).toBe("LIMITED");
-  expect(evidence.tierMessage).toContain("No public-data appeal evidence was found");
+  expect(evidence.tierMessage).toContain("Appeal Compass can make mistakes");
   expect(evidence.arguments).toEqual([]);
 });

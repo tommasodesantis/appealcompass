@@ -16,14 +16,16 @@ tests, and user-facing copy.
   automation is available. Runtime output must warn users when today's date is past the configured
   Assessor session end and must point to the official source URL.
 - The Assessor PDF does not contain BOR open dates, close dates, or evidence deadlines. It shows
-  only pass markers and a repeated BOR-related label, so BOR dates stay sourced to the official BOR
-  dates PDF.
+  only pass markers and a repeated BOR-related label. As of 2026-07-09, the official BOR dates page
+  still linked only the Tax Year 2025 schedule, so the product labels Tax Year 2026 dates as not
+  published and never reuses the expired PDF as a current schedule.
 
 ## Comparable Evidence Feasibility
 
 - The Assessor comparable profile is feasible with caveats. It uses same class, township or
   neighborhood preference, building square footage, lenient year filtering when data exists, and
-  total assessed value per square foot.
+  Improvement AV per square foot. Total AV is retained only for context, overvaluation checks,
+  total-value breakdowns, and savings estimates.
 - The Board of Review comparable profile is feasible with caveats. Public BOR rules do not publish
   a PTAB-style grid, so the implementation uses a conservative building/improvement assessment per
   square foot profile with same-class and similarity filters.
@@ -36,9 +38,10 @@ tests, and user-facing copy.
   It must not present a generated PTAB grid as complete from public data.
 - Step 12 comparable-realism audit checked fixture cases and live Socrata PIN `07203040190000`
   through the local Worker. Passing invariants covered subject/comparable class matching, configured
-  building-size/year tolerances, neighborhood scope when selected, lower-assessed exhibit rows,
-  sane distances, independently recomputed median/percentile/gap values, plausible residential
-  assessed dollars per square foot, and monotonic similarity ordering.
+  building-size/year tolerances, neighborhood scope when selected, selected-pool rows, sane
+  distances, independently recomputed median/percentile/gap values, plausible residential assessed
+  dollars per square foot, and monotonic similarity ordering. Higher-assessed selected rows remain
+  visible and are labeled relative to the subject.
 - The audit did not find fixture or live-payload realism failures. It did identify that the pure
   domain analysis should enforce same-class filtering itself rather than relying only on the
   repository query, so mismatched-class candidates are now excluded before similarity selection.
@@ -71,8 +74,11 @@ tests, and user-facing copy.
 - Configured-year assessed-value rows often exist without value fields. The data layer must select
   the latest value-bearing row and warn when it falls back from the configured assessment year.
 - Residential characteristics can be missing for a subject parcel. The app must degrade without a
-  crash, explain which documented override can unblock analysis, and label user-supplied values as
-  user-supplied documentation items.
+  crash, explain which reliable fallback value can unblock analysis, and label entered values as
+  user-supplied.
+- Land assessed value is available from the assessed-values dataset and is used only for a separate
+  Land AV/land sqft diagnostic. It should explain lot-size-driven total-assessment differences or
+  flag possible land/factual-error issues without replacing Improvement AV/sqft uniformity.
 - Warnings must be de-duplicated before they reach the user.
 
 ## Socrata Concurrency And Architecture
@@ -93,7 +99,7 @@ tests, and user-facing copy.
 | Logical source | Dataset ID | Important fields and quirks |
 | --- | --- | --- |
 | Parcel universe | `nj4t-kc8j` | PIN, class, township, township code, neighborhood, tax code, coordinates, ZIP, geography. Comparable pool rows may not include street addresses. |
-| Assessed values | `uzyt-m557` | `mailed_tot`, `certified_tot`, `board_tot`, `mailed_bldg`, `certified_bldg`, `board_bldg`, `year` or `tax_year`. Configured-year rows may lack value fields. |
+| Assessed values | `uzyt-m557` | `mailed_tot`, `certified_tot`, `board_tot`, `mailed_bldg`, `certified_bldg`, `board_bldg`, `mailed_land`, `certified_land`, `board_land`, `year` or `tax_year`. Configured-year rows may lack value fields. |
 | Residential characteristics | `x54s-btds` | Building square footage, land square footage, year built, residential type, exterior wall, construction quality, beds, baths, amenities. Condo unit data can be sparse. |
 | Parcel sales | `wvhk-k5uv` | Sale date and sale price for the subject and comparable display. Ignore unusable or nominal prices. Comparable sales must be fetched with one bounded `pin in (...)` query for the comparable pool, not one request per comparable. |
 | Clerk tax-code rates | manual Clerk XLSX | `Code24` and composite `CodeRate24` from the Cook County Clerk 2024 Tax Code Agency Rate file, retrieved 2026-07-08 from `https://www.cookcountyclerkil.gov/sites/default/files/2026-04/2024-tax-code-agency-rate-file.xlsx`. A current Socrata tax-rate mapping API was not verified during the Step 6 research pass. |
@@ -110,11 +116,11 @@ tests, and user-facing copy.
 - The UI, print packet, and workbook must show the equalizer and the tax-rate source next to the
   estimated savings range.
 - The print packet is intentionally narrow: tool name, disclaimer, produced date, subject
-  specifications, selected venue, comparable method, comparable table, and analysis/savings
-  results. Filing checklists, deadline reasoning, warnings, and exemption guidance stay out of the
+  specifications, deadline status, consolidated data notes, comparable method, selected comparable
+  table, and analysis/savings results. Filing checklists and exemption guidance stay out of the
   packet.
-- The XLSX workbook has two comparable worksheets: the lower-assessed exhibit and the full selected
-  similar-home pool, both using the same comparable column set.
+- The XLSX workbook has two comparable worksheets: the similarity-filtered selected pool and the
+  full selected similar-home pool, both using the same comparable column set and subject comparison.
 - The browser stores only the last successful in-tab assessment query and payload in
   `sessionStorage` so returning from `/print` can rehydrate the form and results without a refetch.
 
@@ -125,29 +131,29 @@ tests, and user-facing copy.
 - `DEFAULT_TAX_RATE`
 - Clerk tax-code composite-rate lookup in `src/domain/taxRates.ts`
 - Assessor township windows and Assessor `session_end`
-- BOR township windows, evidence deadlines, and BOR `session_end`
+- BOR township-window publication status, evidence deadlines, and BOR `session_end`; never reuse a
+  prior tax-year schedule as the current schedule
 - Official source URLs and source notes
 - Any public-data dataset IDs or field mappings that changed upstream
 
 ## Product Honesty Requirements
 
 - Evidence precedence is documented in `docs/EVIDENCE_PRECEDENCE.md`: positive public values win
-  when present, user values are fallback-only, and user-supplied values remain
-  documentation-required.
-- Show `NOT LEGAL ADVICE. Appeal Compass supports only individual residential homeowners appealing
-  their own home. Entity-owned properties, commercial properties, and association properties are
-  not supported and generally require an attorney.` in every results view and printable packet.
+  when present, user values are fallback-only, and user-supplied values remain clearly labeled.
+- Show `NOT LEGAL ADVICE. Users are responsible to verify that the evidence collected via Appeal
+  Compass is correct.` in every results view and printable packet.
 - Every deadline must carry a link to the official venue source and the instruction to verify at
   the official source before filing.
-- Users explicitly choose Assessor, BOR, or PTAB. The app must not silently switch venues; when a
-  selected Assessor or BOR window is closed, keep preparation guidance available while preserving
-  the selected venue's comparable profile and checklist.
-- PTAB deadlines are computed only from a user-entered BOR decision date. If no date is provided,
-  the app must refuse to guess.
+- Users explicitly choose Assessor, BOR, or PTAB. The app must not silently switch venues. When a
+  selected window is closed or a current schedule is not published, keep preparation guidance
+  available while preserving the selected venue's comparable profile and checklist.
+- PTAB deadlines are computed only from the date on a written BOR decision notice. Exclude the
+  notice date, include day 30, and move a weekend or Illinois legal-holiday expiration to the next
+  business day. The result must explain that Cook County's later township-transmission date may
+  control and cannot be observed by this tool.
 - Estimated savings are rough ranges only. Display the equalizer and tax-rate assumptions next to
   the range.
-- User-supplied values must be labeled as user-supplied and documentation-required, never as
-  official county data.
+- User-supplied values must be labeled as user-supplied, never as official county data.
 
 ## Sale Recency Rule
 
@@ -165,7 +171,8 @@ tests, and user-facing copy.
   https://ptab.illinois.gov/filing.html
 - Implementation note: stale sales may be shown as informational context, but must not create an
   overvaluation argument or estimated savings. PTAB deadlines remain unrelated and are computed
-  only from a user-supplied BOR decision date.
+  only from the user-supplied date on the written BOR decision notice, with the Cook County
+  township-transmission caveat shown separately.
 - Phase 6 implementation: `buildEvidenceSummary` filters recorded sales and user-reported
   purchases through this rule before assigning an overvaluation target or estimated savings.
   Appraisals remain labeled by date; no deterministic official appraisal-age window was identified.
@@ -184,9 +191,10 @@ tests, and user-facing copy.
 
 ## Reporting
 
-- Problem reporting is wired but disabled until deployment secrets and public keys are configured.
-  Server-side secrets are `TURNSTILE_SECRET_KEY`, `GITHUB_ISSUES_TOKEN`, and `RESEND_API_KEY`;
-  public constants are `TURNSTILE_SITE_KEY` in `src/domain/publicConfig.ts`.
+- Problem reporting and contact forms have a configured public Turnstile site key but remain
+  unavailable until their deployment secrets are configured. Server-side secrets are
+  `TURNSTILE_SECRET_KEY`, `GITHUB_ISSUES_TOKEN`, and `RESEND_API_KEY`; the public
+  `TURNSTILE_SITE_KEY` is in `src/domain/publicConfig.ts`.
 - The Turnstile secret, GitHub token, and Resend API key must never be committed or sent to the
   browser. The reporting and contact endpoints strip HTML from submitted text and exclude
   Turnstile tokens from outbound GitHub issue bodies or Resend emails.

@@ -65,8 +65,10 @@ export function parcelFromJson(raw: JsonRecord): Parcel {
     fullBaths: numberValue(raw.full_baths),
     lat: numberValue(raw.lat),
     lon: numberValue(raw.lon),
+    assessmentYear: intValue(raw.current_assessment_year ?? raw.assessment_year),
     currentAv: numberValue(raw.current_av),
     currentImprovementAv: numberValue(raw.current_improvement_av),
+    currentLandAv: numberValue(raw.current_land_av ?? raw.land_av),
     priorFinalAv: numberValue(raw.prior_final_av),
   };
 }
@@ -85,6 +87,7 @@ export function comparableFromJson(raw: JsonRecord): Comparable {
     assessmentYear: intValue(raw.assessment_year),
     av: numberValue(raw.av),
     improvementAv: numberValue(raw.improvement_av),
+    landAv: numberValue(raw.land_av),
     landSqft: numberValue(raw.land_sqft),
     style: nullableString(raw.style),
     amenityCount: Math.trunc(numberValue(raw.amenity_count) ?? 0),

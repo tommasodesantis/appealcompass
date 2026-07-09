@@ -1,7 +1,7 @@
 import worker from "../worker/index";
 import { buildComparableWorkbook } from "./xlsx";
 
-const REQUIRED_STEP_ONE = "ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no";
+const REQUIRED_STEP_ONE = "ownershipType=individual";
 const decoder = new TextDecoder();
 
 function uint16(bytes: Uint8Array, offset: number): number {
@@ -58,7 +58,7 @@ test("buildComparableWorkbook creates a real XLSX with expected exhibit sections
   const sheet = entries.get("xl/worksheets/sheet1.xml") ?? "";
   const similarHomes = entries.get("xl/worksheets/sheet2.xml") ?? "";
   expect(sheet).toContain("Subject Property Summary");
-  expect(sheet).toContain("Comparable Exhibit");
+  expect(sheet).toContain("Selected Comparable Homes");
   expect(sheet).toContain("Distance km");
   expect(sheet).toContain("Neighborhood");
   expect(sheet).toContain("Property class");
@@ -66,20 +66,24 @@ test("buildComparableWorkbook creates a real XLSX with expected exhibit sections
   expect(sheet).toContain("Year built");
   expect(sheet).toContain("Sale date");
   expect(sheet).toContain("Sale price");
-  expect(sheet).toContain("Assessment type");
-  expect(sheet).toContain("Assessment $/sqft");
+  expect(sheet).toContain("Assessment metric");
+  expect(sheet).toContain("Improvement AV/sqft");
+  expect(sheet).toContain("Compared with subject (%)");
   expect(sheet).toContain("Similarity score");
   expect(sheet).toContain("Analysis Stats");
-  expect(sheet).toContain("Median assessment $/sqft");
+  expect(sheet).toContain("Median Improvement AV/sqft");
+  expect(sheet).toContain("Land check");
   expect(sheet).toContain("Savings Calculation");
   expect(sheet).toContain("State equalizer");
   expect(sheet).toContain("Tax rate source");
   expect(sheet).toContain("approximate parcel-specific rate 7.7774%");
   expect(sheet).toContain("2024-08-10");
   expect(sheet).toContain("03-00-000-000-0002");
+  expect(sheet).toContain("03-00-000-000-0010");
+  expect(sheet.toLowerCase()).not.toContain("documentation required");
   expect(similarHomes).toContain("Similar Homes");
   expect(similarHomes).toContain("full selected comparable pool");
-  expect(similarHomes).toContain("Assessment $/sqft");
+  expect(similarHomes).toContain("Improvement AV/sqft");
   expect(similarHomes).toContain("Similarity score");
   expect(similarHomes).toContain("03-00-000-000-0010");
 });

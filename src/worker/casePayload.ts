@@ -3,12 +3,14 @@ import { DEFAULT_TAX_RATE, SUPPORTED_JURISDICTIONS } from "../domain/config";
 import { UserInputError } from "../domain/errors";
 import {
   type CaseFile,
+  type DataNotice,
   type Jurisdiction,
   type UserEvidence,
   defaultUserEvidence,
   withUserEvidence,
 } from "../domain/models";
 import type { Venue } from "../domain/models";
+import { buildDataNotices, cleanWarnings } from "../domain/notices";
 import type { AppealStatusInput } from "../domain/routing";
 import { routeCase } from "../domain/routing";
 import { clerkTaxRateForCode } from "../domain/taxRates";
@@ -27,10 +29,13 @@ export interface CasePayload {
     key: string;
     name: string;
     officialUrl: string;
+    submissionUrl: string;
+    rulesUrl: string;
     checklist: string[];
     sections: Array<{ title: string; lines: string[] }>;
   };
   warnings: string[];
+  notices: DataNotice[];
 }
 
 const ENTITY_REFUSAL_MESSAGE =
@@ -81,7 +86,7 @@ function jurisdictionFromParams(params: URLSearchParams): Jurisdiction {
   return jurisdiction;
 }
 
-function userEvidenceFromParams(params: URLSearchParams): UserEvidence {
+function userEvidenceFromParams(params: URLSearchParams, requestedVenue: Venue): UserEvidence {
   const ownershipType = requiredChoice(
     params,
     "ownershipType",
@@ -91,40 +96,37 @@ function userEvidenceFromParams(params: URLSearchParams): UserEvidence {
   if (ownershipType !== "individual") {
     throw new UserInputError(ENTITY_REFUSAL_MESSAGE);
   }
-  const assessorAppealFiled = requiredBoolean(
-    params,
-    "assessorAppealFiled",
-    "whether you already filed an Assessor appeal",
-  );
-  const assessorDecisionReceived = assessorAppealFiled
-    ? requiredBoolean(
-        params,
-        "assessorDecisionReceived",
-        "whether you received the Assessor decision",
-      )
-    : null;
-  const borAppealFiled = requiredBoolean(
-    params,
-    "borAppealFiled",
-    "whether you already filed a Board of Review appeal",
-  );
-  const borDecisionReceived = borAppealFiled
-    ? requiredBoolean(params, "borDecisionReceived", "whether you received the BOR decision")
-    : null;
-  const borDecisionDate = borDecisionReceived
-    ? (params.get("borDecisionDate")?.trim() ?? null)
-    : null;
+  let borNoticeReceived: boolean | null = null;
+  let borNoticeDate: string | null = null;
+  if (requestedVenue === "ptab") {
+    const noticeParam = params.has("borNoticeReceived")
+      ? "borNoticeReceived"
+      : "borDecisionReceived";
+    borNoticeReceived = requiredBoolean(
+      params,
+      noticeParam,
+      "whether you received the written Board of Review decision notice",
+    );
+    if (borNoticeReceived) {
+      borNoticeDate = (params.get("borNoticeDate") ?? params.get("borDecisionDate") ?? "").trim();
+      if (!borNoticeDate) {
+        throw new UserInputError("Enter the date on the written Board of Review decision notice.");
+      }
+    }
+  }
   return defaultUserEvidence({
     purchasePrice: positiveNumber(params, "purchasePrice"),
     purchaseDate: params.get("purchaseDate"),
     appraisalValue: positiveNumber(params, "appraisalValue"),
     appraisalDate: params.get("appraisalDate"),
     ownershipType,
-    assessorAppealFiled,
-    assessorDecisionReceived,
-    borAppealFiled,
-    borDecisionReceived,
-    borDecisionDate,
+    assessorAppealFiled: null,
+    assessorDecisionReceived: null,
+    borAppealFiled: null,
+    borDecisionReceived: borNoticeReceived,
+    borDecisionDate: borNoticeDate,
+    borNoticeReceived,
+    borNoticeDate,
     actualSqft: positiveNumber(params, "actualSqft"),
     actualAv: positiveNumber(params, "actualAv"),
     actualImprovementAv: positiveNumber(params, "actualImprovementAv"),
@@ -133,11 +135,8 @@ function userEvidenceFromParams(params: URLSearchParams): UserEvidence {
 
 function appealStatusFromEvidence(userEvidence: UserEvidence): AppealStatusInput {
   return {
-    assessorAppealFiled: userEvidence.assessorAppealFiled === true,
-    assessorDecisionReceived: userEvidence.assessorDecisionReceived,
-    borAppealFiled: userEvidence.borAppealFiled === true,
-    borDecisionReceived: userEvidence.borDecisionReceived,
-    borDecisionDate: userEvidence.borDecisionDate,
+    borNoticeReceived: userEvidence.borNoticeReceived,
+    borNoticeDate: userEvidence.borNoticeDate,
   };
 }
 
@@ -148,7 +147,7 @@ function taxRateSelection(
   if (overrideRate !== null) {
     return {
       taxRate: overrideRate,
-      source: `user-supplied tax-rate override ${(overrideRate * 100).toFixed(2)}%; documentation required`,
+      source: `user-supplied tax-rate override ${(overrideRate * 100).toFixed(2)}%`,
     };
   }
   const clerkRate = clerkTaxRateForCode(caseFile.parcel.taxCode);
@@ -181,14 +180,14 @@ export async function buildCasePayload(
     "where you want to appeal",
   );
   const taxRateOverride = positiveNumber(params, "taxRate");
-  const userEvidence = userEvidenceFromParams(params);
+  const userEvidence = userEvidenceFromParams(params, requestedVenue);
   const caseFile = withUserEvidence(await repo.loadCaseByPin(pin), userEvidence);
   const savingsTaxRate = taxRateSelection(caseFile, taxRateOverride);
   const routing = routeCase(
     caseFile.parcel.townshipName,
     today,
     requestedVenue,
-    userEvidence.borDecisionDate,
+    userEvidence.borNoticeDate,
     appealStatusFromEvidence(userEvidence),
   );
   const evidence = buildEvidenceSummary(
@@ -199,6 +198,11 @@ export async function buildCasePayload(
   );
   const adapter = adapterForVenue(routing.venue);
   const sections = adapter.sections(caseFile, evidence, routing);
+  const warnings = cleanWarnings([
+    ...routing.warnings,
+    ...caseFile.dataWarnings,
+    ...evidence.comparableAnalysis.warnings,
+  ]);
   return {
     ok: true,
     demo,
@@ -211,13 +215,12 @@ export async function buildCasePayload(
       key: adapter.venueKey,
       name: adapter.venueName,
       officialUrl: adapter.officialUrl,
+      submissionUrl: adapter.submissionUrl,
+      rulesUrl: adapter.rulesUrl,
       checklist: adapter.checklist(caseFile),
       sections,
     },
-    warnings: [
-      ...routing.warnings,
-      ...caseFile.dataWarnings,
-      ...evidence.comparableAnalysis.warnings,
-    ],
+    warnings,
+    notices: buildDataNotices(warnings),
   };
 }

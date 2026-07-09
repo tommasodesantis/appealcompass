@@ -1,9 +1,10 @@
 import { numberValue } from "../domain/caseSerde";
 import { ASSESSMENT_YEAR } from "../domain/config";
-import { NotFoundError } from "../domain/errors";
+import { NotFoundError, UnsupportedPropertyError } from "../domain/errors";
 import type { AssessmentHistoryRow, CaseFile, Comparable, Parcel, Sale } from "../domain/models";
 import { defaultUserEvidence } from "../domain/models";
 import { formatPin, normalizePin } from "../domain/pin";
+import { propertyClassDecision } from "../domain/propertyClasses";
 import type { JsonRecord, SocrataClient, SocrataResponse, SocrataWarning } from "./socrataClient";
 
 export interface CaseRepository {
@@ -56,6 +57,9 @@ const AV_SELECT = [
   "mailed_tot",
   "certified_tot",
   "board_tot",
+  "mailed_land",
+  "certified_land",
+  "board_land",
   "mailed_bldg",
   "certified_bldg",
   "board_bldg",
@@ -103,15 +107,18 @@ function hasAssessmentValue(row: JsonRecord): boolean {
   return (total !== null && total > 0) || (improvement !== null && improvement > 0);
 }
 
-function latestAssessmentValues(rows: JsonRecord[]): [number | null, number | null, number | null] {
+function latestAssessmentValues(
+  rows: JsonRecord[],
+): [number | null, number | null, number | null, number | null] {
   const valueRows = rows.filter(hasAssessmentValue);
   if (valueRows.length === 0) {
-    return [null, null, null];
+    return [null, null, null, null];
   }
   const row = latestRow(valueRows);
   return [
     numberValue(pick(row, "board_tot", "certified_tot", "mailed_tot")),
     numberValue(pick(row, "board_bldg", "certified_bldg", "mailed_bldg")),
+    numberValue(pick(row, "board_land", "certified_land", "mailed_land")),
     rowYear(row),
   ];
 }
@@ -261,6 +268,18 @@ export class SocrataRepository implements CaseRepository {
       throw new NotFoundError(`PIN ${formatPin(normalized)} was not found in the parcel universe.`);
     }
     const universe = latestRow(parcelRows);
+    const classDecision = propertyClassDecision(nullableString(pick(universe, "class")));
+    if (!classDecision.supported) {
+      const classText = classDecision.propertyClass
+        ? `property class ${classDecision.propertyClass}`
+        : "an unavailable property class";
+      throw new UnsupportedPropertyError(
+        `Appeal Compass currently supports residential dwellings and residential condominiums only. PIN ${formatPin(normalized)} is classified as ${classDecision.category} (${classText}), so no evidence analysis was run.`,
+        formatPin(normalized),
+        classDecision.propertyClass,
+        classDecision.category,
+      );
+    }
 
     let charRows = responseRows(
       await this.client.fetchAll(
@@ -326,7 +345,7 @@ export class SocrataRepository implements CaseRepository {
         );
       }
     }
-    let [current, currentImprovement, currentYear] = latestAssessmentValues(avRows);
+    let [current, currentImprovement, currentLand, currentYear] = latestAssessmentValues(avRows);
     if (avRows.length > 0 && current === null && currentImprovement === null) {
       avRows = responseRows(
         await this.client.fetchAll(
@@ -337,7 +356,7 @@ export class SocrataRepository implements CaseRepository {
         warnings,
         normalized,
       );
-      [current, currentImprovement, currentYear] = latestAssessmentValues(avRows);
+      [current, currentImprovement, currentLand, currentYear] = latestAssessmentValues(avRows);
       if (current !== null || currentImprovement !== null) {
         warnings.push(
           `We found a ${ASSESSMENT_YEAR} assessment row, but it did not include usable assessed values, so we're using the most recent value-bearing year (${
@@ -367,8 +386,10 @@ export class SocrataRepository implements CaseRepository {
       fullBaths: numberValue(pick(char, "char_fbath")),
       lat: numberValue(pick(universe, "lat", "latitude")),
       lon: numberValue(pick(universe, "lon", "longitude")),
+      assessmentYear: currentYear,
       currentAv: current,
       currentImprovementAv: currentImprovement,
+      currentLandAv: currentLand,
       priorFinalAv: null,
     };
     if (current === null) {
@@ -567,7 +588,7 @@ export class SocrataRepository implements CaseRepository {
         continue;
       }
       const compPin = normalizePin(String(row.pin));
-      const [totalAv, improvementAv, assessmentYear] = latestAssessmentValues(
+      const [totalAv, improvementAv, landAv, assessmentYear] = latestAssessmentValues(
         avRowsByPin.get(compPin) ?? [],
       );
       const universe = universeByPin.has(compPin)
@@ -586,6 +607,7 @@ export class SocrataRepository implements CaseRepository {
         assessmentYear,
         av: totalAv,
         improvementAv,
+        landAv,
         landSqft: numberValue(pick(row, "char_land_sf", "land_sf")),
         style: styleKey(row),
         amenityCount: amenityCount(row),

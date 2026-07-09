@@ -1,21 +1,21 @@
-function y(e){return e==="assessor"?"Total AV":"Improvement AV"}function h(e){let[t,n,s]=e.split("/"),o=Number(t),a=Number(n),i=Number(s);return fe(i,o,a)}function fe(e,t,n){return`${e.toString().padStart(4,"0")}-${t.toString().padStart(2,"0")}-${n.toString().padStart(2,"0")}`}var wt=+"3.0300";var C="https://www.cookcountyassessoril.gov/assessment-calendar-and-deadlines";var $="https://www.cookcountyboardofreview.com/sites/g/files/ywwepo261/files/document/file/2025-07/2025TOWNSHIPOPEN-CLOSE.pdf";var U="https://ptab.illinois.gov/";function l(e,t,n=null){return{opens:h(e),closes:h(t),evidenceDeadline:n?h(n):null}}var Tt={venueLabel:"Cook County Assessor",sessionLabel:"Tax Year 2026 Assessor Appeal Windows",sessionEnd:h("8/12/2026"),sourceUrl:C,sourceNote:"Manual authority file 'Assessment & Appeal Calendar _ Cook County Assessor's Office.pdf' extracted on 2026-07-06 from the official Assessor calendar page, which reported Last updated: 6/29/26. Direct shell automation still returned CloudFront 403, so manually verify at the official source before filing."},R={Barrington:[],Berwyn:[l("5/20/2026","7/6/2026")],Bloom:[],Bremen:[],Calumet:[],Cicero:[l("6/17/2026","7/31/2026")],"Elk Grove":[l("6/22/2026","8/4/2026")],Evanston:[l("4/22/2026","6/4/2026")],Hanover:[],"Hyde Park":[],Jefferson:[],Lake:[],Lakeview:[l("5/28/2026","7/13/2026")],Lemont:[],Leyden:[],Lyons:[],Maine:[l("6/5/2026","7/21/2026")],"New Trier":[l("5/7/2026","6/22/2026")],Niles:[],"North Chicago":[],Northfield:[],"Norwood Park":[l("4/13/2026","5/26/2026")],"Oak Park":[l("5/6/2026","6/18/2026")],Orland:[],Palatine:[],Palos:[l("6/3/2026","7/17/2026")],Proviso:[],Rich:[],"River Forest":[l("4/20/2026","6/2/2026")],Riverside:[l("4/24/2026","6/8/2026")],"Rogers Park":[l("4/17/2026","6/1/2026")],Schaumburg:[],"South Chicago":[],Stickney:[l("6/29/2026","8/12/2026")],Thornton:[],"West Chicago":[],Wheeling:[],Worth:[]},At={venueLabel:"Cook County Board of Review",sessionLabel:"Tax Year 2025 - Cook County Board of Review 2025-26 Session",sessionEnd:h("6/3/2026"),sourceUrl:$,sourceNote:"BOR 2025 township date PDF linked from the official Board of Review site."},A={1:{townships:["Berwyn","Evanston","Norwood Park","River Forest","Riverside","Rogers Park"],windows:[l("7/7/2025","8/5/2025","8/15/2025"),l("12/3/2025","12/12/2025","12/22/2025")]},"2a":{townships:["Cicero","Oak Park","Palos"],windows:[l("7/21/2025","8/19/2025","8/29/2025"),l("12/3/2025","12/12/2025","12/22/2025")]},"2b":{townships:["Elk Grove","Lakeview","Lyons","New Trier"],windows:[l("8/18/2025","9/16/2025","9/26/2025"),l("12/3/2025","12/12/2025","12/22/2025")]},3:{townships:["Barrington","Maine","Northfield","Stickney","West Chicago"],windows:[l("9/22/2025","10/21/2025","10/31/2025"),l("12/3/2025","12/12/2025","12/22/2025")]},4:{townships:["Bremen","Calumet","Hyde Park","Lemont","Leyden","Worth"],windows:[l("10/23/2025","11/21/2025","12/1/2025"),l("12/3/2025","12/12/2025","12/22/2025")]},5:{townships:["Jefferson","Proviso","Wheeling"],windows:[l("11/20/2025","12/19/2025","12/29/2025")]},6:{townships:["Lake","Orland","Palatine","Schaumburg","Thornton"],windows:[l("1/5/2026","2/3/2026","2/13/2026")]},7:{townships:["Bloom","Hanover","Niles","Rich","North Chicago","South Chicago"],windows:[l("1/20/2026","2/18/2026","2/28/2026")]}};var St=Object.fromEntries(Object.entries(A).flatMap(([e,t])=>t.townships.map(n=>[n,e])));var S="";var B="appealcompass:lastAssessment";function ge(e,t,n=new Date().toISOString()){return JSON.stringify({queryString:e.toString(),payload:t,savedAt:n})}function he(e){if(!e)return null;try{let t=JSON.parse(e);return!t||typeof t!="object"||typeof t.queryString!="string"||typeof t.savedAt!="string"||!("payload"in t)?null:{query:new URLSearchParams(t.queryString),payload:t.payload,savedAt:t.savedAt}}catch{return null}}function W(e,t,n){try{return e.setItem(B,ge(t,n)),!0}catch{return!1}}function j(e){try{return he(e.getItem(B))}catch{return null}}var V=new TextEncoder;function be(e){return String(e??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}function ye(e){return e&&typeof e=="object"&&"value"in e?e:{value:e}}function ve(e){let t=e+1,n="";for(;t>0;){let s=(t-1)%26;n=String.fromCharCode(65+s)+n,t=Math.floor((t-1)/26)}return n}function we(e,t,n){let s=ye(e),o=`${ve(n)}${t}`,a=s.style===void 0?"":` s="${s.style}"`;if(typeof s.value=="number"&&Number.isFinite(s.value))return`<c r="${o}"${a}><v>${s.value}</v></c>`;let i=s.value===null||s.value===""?"Not available":s.value;return`<c r="${o}" t="inlineStr"${a}><is><t>${be(i)}</t></is></c>`}function Y(e){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+function A(t){return"Improvement AV"}function w(t){let[e,n,s]=t.split("/"),o=Number(e),r=Number(n),i=Number(s);return Me(i,o,r)}function Me(t,e,n){return`${t.toString().padStart(4,"0")}-${e.toString().padStart(2,"0")}-${n.toString().padStart(2,"0")}`}var qe=2026,Ht=+"3.0300";var $="https://www.cookcountyassessoril.gov/assessment-calendar-and-deadlines";var x="https://www.cookcountyboardofreview.com/dates-and-deadlines";var E="https://ptab.illinois.gov/";function c(t,e,n=null){return{opens:w(t),closes:w(e),evidenceDeadline:n?w(n):null}}var Ut={assessmentYear:qe,published:!0,venueLabel:"Cook County Assessor",sessionLabel:"Tax Year 2026 Assessor Appeal Windows",sessionEnd:w("8/12/2026"),sourceUrl:$,sourceNote:"Manual authority file 'Assessment & Appeal Calendar _ Cook County Assessor's Office.pdf' extracted on 2026-07-06 from the official Assessor calendar page, which reported Last updated: 6/29/26. Direct shell automation still returned CloudFront 403, so manually verify at the official source before filing."},_={Barrington:[],Berwyn:[c("5/20/2026","7/6/2026")],Bloom:[],Bremen:[],Calumet:[],Cicero:[c("6/17/2026","7/31/2026")],"Elk Grove":[c("6/22/2026","8/4/2026")],Evanston:[c("4/22/2026","6/4/2026")],Hanover:[],"Hyde Park":[],Jefferson:[],Lake:[],Lakeview:[c("5/28/2026","7/13/2026")],Lemont:[],Leyden:[],Lyons:[],Maine:[c("6/5/2026","7/21/2026")],"New Trier":[c("5/7/2026","6/22/2026")],Niles:[],"North Chicago":[],Northfield:[],"Norwood Park":[c("4/13/2026","5/26/2026")],"Oak Park":[c("5/6/2026","6/18/2026")],Orland:[],Palatine:[],Palos:[c("6/3/2026","7/17/2026")],Proviso:[],Rich:[],"River Forest":[c("4/20/2026","6/2/2026")],Riverside:[c("4/24/2026","6/8/2026")],"Rogers Park":[c("4/17/2026","6/1/2026")],Schaumburg:[],"South Chicago":[],Stickney:[c("6/29/2026","8/12/2026")],Thornton:[],"West Chicago":[],Wheeling:[],Worth:[]},Ot={assessmentYear:2025,published:!1,venueLabel:"Cook County Board of Review",sessionLabel:"Tax Year 2025 - Cook County Board of Review 2025-26 Session",sessionEnd:w("6/3/2026"),sourceUrl:x,sourceNote:"The official Board of Review dates page still lists the 2025 tax-year schedule. Tax Year 2026 township filing dates have not been published."};var Ne={1:{townships:["Berwyn","Evanston","Norwood Park","River Forest","Riverside","Rogers Park"],windows:[c("7/7/2025","8/5/2025","8/15/2025"),c("12/3/2025","12/12/2025","12/22/2025")]},"2a":{townships:["Cicero","Oak Park","Palos"],windows:[c("7/21/2025","8/19/2025","8/29/2025"),c("12/3/2025","12/12/2025","12/22/2025")]},"2b":{townships:["Elk Grove","Lakeview","Lyons","New Trier"],windows:[c("8/18/2025","9/16/2025","9/26/2025"),c("12/3/2025","12/12/2025","12/22/2025")]},3:{townships:["Barrington","Maine","Northfield","Stickney","West Chicago"],windows:[c("9/22/2025","10/21/2025","10/31/2025"),c("12/3/2025","12/12/2025","12/22/2025")]},4:{townships:["Bremen","Calumet","Hyde Park","Lemont","Leyden","Worth"],windows:[c("10/23/2025","11/21/2025","12/1/2025"),c("12/3/2025","12/12/2025","12/22/2025")]},5:{townships:["Jefferson","Proviso","Wheeling"],windows:[c("11/20/2025","12/19/2025","12/29/2025")]},6:{townships:["Lake","Orland","Palatine","Schaumburg","Thornton"],windows:[c("1/5/2026","2/3/2026","2/13/2026")]},7:{townships:["Bloom","Hanover","Niles","Rich","North Chicago","South Chicago"],windows:[c("1/20/2026","2/18/2026","2/28/2026")]}};var Bt=Object.fromEntries(Object.entries(Ne).flatMap(([t,e])=>e.townships.map(n=>[n,t])));var P="0x4AAAAAADxp6hAzqJ2ZR8aE";var J=[{value:"all",max:null,label:"All selected comps",meaning:"Show the full generated exhibit, including questionable rows when alternatives are sparse."},{value:"0.10",max:.1,label:"Excellent (0.00-0.10)",meaning:"Excellent"},{value:"0.20",max:.2,label:"Good comp (0.00-0.20)",meaning:"Good comp"},{value:"0.35",max:.35,label:"Usable (0.00-0.35)",meaning:"Usable, but check the row carefully"},{value:"0.50",max:.5,label:"Broad match (0.00-0.50)",meaning:"Broad match; review the row carefully before using it"}];function D(t){if(!t||t==="all")return null;let e=Number(t);return Number.isFinite(e)&&e>=0?e:null}function H(t){return t===null?"all":t.toFixed(2)}function R(t,e){return e===null?t:t.filter(n=>n.similarity<=e)}var Q="appealcompass:lastAssessment";function Fe(t,e,n=new Date().toISOString()){return JSON.stringify({queryString:t.toString(),payload:e,savedAt:n})}function _e(t){if(!t)return null;try{let e=JSON.parse(t);return!e||typeof e!="object"||typeof e.queryString!="string"||typeof e.savedAt!="string"||!("payload"in e)?null:{query:new URLSearchParams(e.queryString),payload:e.payload,savedAt:e.savedAt}}catch{return null}}function Z(t,e,n){try{return t.setItem(Q,Fe(e,n)),!0}catch{return!1}}function ee(t){try{return _e(t.getItem(Q))}catch{return null}}var te=new TextEncoder;function De(t){return String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}function He(t){return t&&typeof t=="object"&&"value"in t?t:{value:t}}function Ue(t){let e=t+1,n="";for(;e>0;){let s=(e-1)%26;n=String.fromCharCode(65+s)+n,e=Math.floor((e-1)/26)}return n}function Oe(t,e,n){let s=He(t),o=`${Ue(n)}${e}`,r=s.style===void 0?"":` s="${s.style}"`;if(typeof s.value=="number"&&Number.isFinite(s.value))return`<c r="${o}"${r}><v>${s.value}</v></c>`;let i=s.value===null||s.value===""?"Not available":s.value;return`<c r="${o}" t="inlineStr"${r}><is><t>${De(i)}</t></is></c>`}function ne(t){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews><sheetView workbookViewId="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="15"/>
-  <cols><col min="1" max="11" width="22" customWidth="1"/></cols>
-  <sheetData>${e.map((n,s)=>`<row r="${s+1}">${n.map((o,a)=>we(o,s+1,a)).join("")}</row>`).join("")}</sheetData>
-</worksheet>`}function Te(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  <cols><col min="1" max="12" width="22" customWidth="1"/></cols>
+  <sheetData>${t.map((n,s)=>`<row r="${s+1}">${n.map((o,r)=>Oe(o,s+1,r)).join("")}</row>`).join("")}</sheetData>
+</worksheet>`}function Be(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Comps" sheetId="1" r:id="rId1"/><sheet name="Similar Homes" sheetId="2" r:id="rId2"/></sheets>
-</workbook>`}function Ae(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+</workbook>`}function je(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`}function Se(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+</Relationships>`}function We(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`}function xe(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+</Relationships>`}function Ve(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
@@ -23,7 +23,7 @@ function y(e){return e==="assessor"?"Total AV":"Improvement AV"}function h(e){le
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-</Types>`}function ke(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+</Types>`}function Ye(){return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="11"/><name val="Aptos"/></font></fonts>
   <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEFE3C1"/><bgColor indexed="64"/></patternFill></fill></fills>
@@ -31,55 +31,63 @@ function y(e){return e==="assessor"?"Total AV":"Improvement AV"}function h(e){le
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
   <cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="1" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-</styleSheet>`}function z(){return[{value:"PIN",style:2},{value:"Distance km",style:2},{value:"Neighborhood",style:2},{value:"Property class",style:2},{value:"Building sqft",style:2},{value:"Year built",style:2},{value:"Sale date",style:2},{value:"Sale price",style:2},{value:"Assessment type",style:2},{value:"Assessment $/sqft",style:2},{value:"Similarity score",style:2}]}function G(e,t){return e.map(n=>[n.comparable.pinFormatted,n.distanceKm,n.comparable.neighborhood,n.comparable.propertyClass,n.comparable.buildingSqft,n.comparable.yearBuilt,n.comparable.saleDate,n.comparable.salePrice,t,n.avPerSqft,n.similarity])}function Le(e){let t=e.case.parcel,n=e.evidence.comparableAnalysis,s=e.evidence.savingsAssumptions,o=y(n.profileKey);return[[{value:"Subject Property Summary",style:1}],["PIN",t.pinFormatted],["Class / Township",`${t.propertyClass} / ${t.townshipName}`],["Building Sqft",t.buildingSqft],["Total AV",t.currentAv],["Improvement AV",t.currentImprovementAv],["Implied Market Value",e.evidence.impliedMarketValue],[],[{value:"Comparable Exhibit",style:1}],z(),...G(n.exhibit,o),[],[{value:"Analysis Stats",style:1}],["Pool size",n.poolSize],["Median assessment $/sqft",n.medianAvPerSqft],["Percentile",n.percentile],["Gap %",n.gapPct],[],[{value:"Savings Calculation",style:1}],["State equalizer",s.stateEqualizer],["Assumed tax rate",s.taxRate],["Tax rate source",s.taxRateSource],["Low estimate",s.low],["Point estimate",s.point],["High estimate",s.high],["Formula","estimated savings = Delta AV x E x r, shown as a +/-20% range; not a promise"]]}function Ee(e){let t=e.evidence.comparableAnalysis,n=y(t.profileKey);return[[{value:"Similar Homes",style:1}],["This sheet lists the full selected comparable pool, not only the lower-assessed exhibit."],z(),...G(t.pool,n)]}function Ce(){let e=new Uint32Array(256);for(let t=0;t<256;t+=1){let n=t;for(let s=0;s<8;s+=1)n=n&1?3988292384^n>>>1:n>>>1;e[t]=n>>>0}return e}var $e=Ce();function Re(e){let t=4294967295;for(let n of e)t=t>>>8^($e[(t^n)&255]??0);return(t^4294967295)>>>0}function c(e,t){e.push(t&255,t>>>8&255)}function p(e,t){e.push(t&255,t>>>8&255,t>>>16&255,t>>>24&255)}function P(e,t){for(let n of t)e.push(n)}function Pe(e){let t=[],n=[],s=e.map(a=>{let i=V.encode(a.text);return{path:a.path,data:i,crc:Re(i)}});for(let a of s){let i=t.length,d=V.encode(a.path);p(t,67324752),c(t,20),c(t,0),c(t,0),c(t,0),c(t,0),p(t,a.crc),p(t,a.data.length),p(t,a.data.length),c(t,d.length),c(t,0),P(t,d),P(t,a.data),p(n,33639248),c(n,20),c(n,20),c(n,0),c(n,0),c(n,0),c(n,0),p(n,a.crc),p(n,a.data.length),p(n,a.data.length),c(n,d.length),c(n,0),c(n,0),c(n,0),c(n,0),p(n,0),p(n,i),P(n,d)}let o=t.length;return t.push(...n),p(t,101010256),c(t,0),c(t,0),c(t,s.length),c(t,s.length),p(t,n.length),p(t,o),c(t,0),new Uint8Array(t)}function X(e){return`appeal-compass-comps-${e.case.parcel.pin}.xlsx`}function K(e){return Pe([{path:"[Content_Types].xml",text:xe()},{path:"_rels/.rels",text:Se()},{path:"xl/workbook.xml",text:Te()},{path:"xl/_rels/workbook.xml.rels",text:Ae()},{path:"xl/styles.xml",text:ke()},{path:"xl/worksheets/sheet1.xml",text:Y(Le(e))},{path:"xl/worksheets/sheet2.xml",text:Y(Ee(e))}])}var ne=document.querySelector("#app");if(!ne)throw new Error("Missing app root.");var Ie=ne,Fe=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}),Me="Appeal Compass is designed only for individual residential homeowners appealing their own home; if interested in a similar tool for commercial properties please reach out here.",He="Appeal Compass is busy helping other homeowners right now. You're in line \u2014 keep this page open and your assessment will start automatically.",qe="https://www.cookcountyassessoril.gov/exemptions",se="https://www.cookcountypropertyinfo.com/",oe=S.length>0,k=oe,L=oe,J=0,f=null;function r(e){return String(e??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}function b(e,t){return`<a href="${r(e)}" target="_blank" rel="noreferrer">${r(t)}<span class="sr-only"> (opens in new tab)</span></a>`}function re(e,t,n="?",s=""){J+=1;let o=`tooltip-${J}`;return`<span class="${s?`tooltip ${s}`:"tooltip"}">
-    <button class="tooltip-toggle" type="button" aria-label="${r(e)}" aria-expanded="false" aria-describedby="${o}">${r(n)}</button>
-    <span class="tooltip-bubble" id="${o}" role="tooltip">${r(t)}</span>
-  </span>`}function v(e,t){return re(e,t)}function De(e,t){return re(e,t,"!","warning-tooltip")}function H(e){let t=String(e??""),n=/https?:\/\/[^\s<>"']+/g,s="",o=0;for(let a of t.matchAll(n)){let i=a[0],d=a.index??0,u=i.match(/[.,;:)]+$/)?.[0]??"",_=i.slice(0,i.length-u.length);s+=r(t.slice(o,d)),s+=`<a href="${r(_)}" target="_blank" rel="noreferrer">${r(_)}<span class="sr-only"> (opens in new tab)</span></a>${r(u)}`,o=d+i.length}return s+r(t.slice(o))}function m(e){return e===null?"Not available":Fe.format(e)}function g(e,t=0){return e===null?"Not available":e.toLocaleString("en-US",{maximumFractionDigits:t})}function Ne(e){return e==="LIMITED"?"No evidence found":e==="STRONG"?"Strong":e==="MODERATE"?"Moderate":e}function Oe(){let e=new Date,t=e.getFullYear(),n=String(e.getMonth()+1).padStart(2,"0"),s=String(e.getDate()).padStart(2,"0");return`${t}-${n}-${s}`}function x(e){let[t,n,s]=e.split("-"),o=Number(t),a=Number(n),i=Number(s);return!Number.isFinite(o)||!Number.isFinite(a)||!Number.isFinite(i)?e:new Date(Date.UTC(o,a-1,i)).toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric",timeZone:"UTC"})}function _e(e,t){return e.length>0&&e.every(n=>t>n.closes)}function ae(e){let t=e.evidenceDeadline?`; evidence due ${x(e.evidenceDeadline)}`:"";return`${x(e.opens)} to ${x(e.closes)}${t}`}function Ue(){return Object.entries(R).flatMap(([t,n])=>n.map(s=>`<li>${r(t)}: ${r(ae(s))}</li>`)).join("")||"<li>No configured Assessor filing windows are available in the current data.</li>"}function Be(){return Object.entries(A).map(([e,t])=>{let n=t.windows.map(s=>ae(s)).join("; ");return`<li>Group ${r(e)} (${r(t.townships.join(", "))}): ${r(n)}</li>`}).join("")}function Q(e,t){let n=e==="assessor"?Object.values(R).flat():Object.values(A).flatMap(o=>o.windows);return _e(n,t)?De(`${e==="assessor"?"Assessor":"Board of Review"} calendar warning`,`All configured deadlines for this venue appear to be past as of ${t}. The data may be stale; verify at the official source before filing. You can still select this venue to prepare for the next session.`):""}function I(e){return`<div class="venue-option">
-    <label class="venue-choice">
-      <input type="radio" name="venue" value="${e.value}" required>
-      <span>${r(e.label)}</span>
-      ${e.warning??""}
-    </label>
-    ${e.details}
-  </div>`}function We(){let e=Oe();return`<fieldset class="question-group venue-picker">
+</styleSheet>`}function se(){return[{value:"PIN",style:2},{value:"Distance km",style:2},{value:"Neighborhood",style:2},{value:"Property class",style:2},{value:"Building sqft",style:2},{value:"Year built",style:2},{value:"Sale date",style:2},{value:"Sale price",style:2},{value:"Assessment metric",style:2},{value:"Improvement AV/sqft",style:2},{value:"Compared with subject (%)",style:2},{value:"Similarity score",style:2}]}function ae(t,e,n){return t.map(s=>[s.comparable.pinFormatted,s.distanceKm,s.comparable.neighborhood,s.comparable.propertyClass,s.comparable.buildingSqft,s.comparable.yearBuilt,s.comparable.saleDate,s.comparable.salePrice,e,s.avPerSqft,n&&n>0?(s.avPerSqft-n)/n*100:null,s.similarity])}function ze(t,e){let n=t.case.parcel,s=t.evidence.comparableAnalysis,o=t.evidence.landAssessment,r=t.evidence.savingsAssumptions,i=t.case.userEvidence,l=A(s.profileKey),b=R(s.pool,e);return[[{value:"Subject Property Summary",style:1}],["PIN",n.pinFormatted],["Class / Township",`${n.propertyClass} / ${n.townshipName}`],["Assessment year",n.assessmentYear],["Building Sqft",n.buildingSqft??i.actualSqft],["Building Sqft source",n.buildingSqft!==null?"Public record":i.actualSqft!==null?"User-supplied":"Not available"],["Land Sqft",n.landSqft],["Total AV",n.currentAv??i.actualAv],["Total AV source",n.currentAv!==null?"Public record":i.actualAv!==null?"User-supplied":"Not available"],["Improvement AV",n.currentImprovementAv??i.actualImprovementAv],["Improvement AV source",n.currentImprovementAv!==null?"Public record":i.actualImprovementAv!==null?"User-supplied":"Not available"],["Land AV",n.currentLandAv],["Implied Market Value",t.evidence.impliedMarketValue],[],[{value:"Selected Comparable Homes",style:1}],["Includes selected homes assessed above the subject for transparent comparison."],se(),...ae(b,l,s.subjectAvPerSqft),[],[{value:"Analysis Stats",style:1}],["Pool size",s.poolSize],["Median Improvement AV/sqft",s.medianAvPerSqft],["Percentile",s.percentile],["Gap %",s.gapPct],["Land check",o.note],["Subject Land AV/sqft",o.subjectLandAvPerSqft],["Median comparable Land AV/sqft",o.medianLandAvPerSqft],["Land percentile",o.percentile],["Land gap %",o.gapPct],["Land issue flagged",o.flagged?"Yes":"No"],[],[{value:"Savings Calculation",style:1}],["State equalizer",r.stateEqualizer],["Assumed tax rate",r.taxRate],["Tax rate source",r.taxRateSource],["Low estimate",r.low],["Point estimate",r.point],["High estimate",r.high],["Formula","estimated savings = Delta AV x E x r, shown as a +/-20% range; not a promise"]]}function Ge(t){let e=t.evidence.comparableAnalysis,n=A(e.profileKey);return[[{value:"Similar Homes",style:1}],["This sheet lists the full selected comparable pool, including higher-assessed rows."],se(),...ae(e.pool,n,e.subjectAvPerSqft)]}function Xe(){let t=new Uint32Array(256);for(let e=0;e<256;e+=1){let n=e;for(let s=0;s<8;s+=1)n=n&1?3988292384^n>>>1:n>>>1;t[e]=n>>>0}return t}var Ke=Xe();function Je(t){let e=4294967295;for(let n of t)e=e>>>8^(Ke[(e^n)&255]??0);return(e^4294967295)>>>0}function u(t,e){t.push(e&255,e>>>8&255)}function f(t,e){t.push(e&255,e>>>8&255,e>>>16&255,e>>>24&255)}function U(t,e){for(let n of e)t.push(n)}function Qe(t){let e=[],n=[],s=t.map(r=>{let i=te.encode(r.text);return{path:r.path,data:i,crc:Je(i)}});for(let r of s){let i=e.length,l=te.encode(r.path);f(e,67324752),u(e,20),u(e,0),u(e,0),u(e,0),u(e,0),f(e,r.crc),f(e,r.data.length),f(e,r.data.length),u(e,l.length),u(e,0),U(e,l),U(e,r.data),f(n,33639248),u(n,20),u(n,20),u(n,0),u(n,0),u(n,0),u(n,0),f(n,r.crc),f(n,r.data.length),f(n,r.data.length),u(n,l.length),u(n,0),u(n,0),u(n,0),u(n,0),f(n,0),f(n,i),U(n,l)}let o=e.length;return e.push(...n),f(e,101010256),u(e,0),u(e,0),u(e,s.length),u(e,s.length),f(e,n.length),f(e,o),u(e,0),new Uint8Array(e)}function oe(t){return`appeal-compass-comps-${t.case.parcel.pin}.xlsx`}function re(t,e=null){return Qe([{path:"[Content_Types].xml",text:Ve()},{path:"_rels/.rels",text:We()},{path:"xl/workbook.xml",text:Be()},{path:"xl/_rels/workbook.xml.rels",text:je()},{path:"xl/styles.xml",text:Ye()},{path:"xl/worksheets/sheet1.xml",text:ne(ze(t,e))},{path:"xl/worksheets/sheet2.xml",text:ne(Ge(t))}])}var me=document.querySelector("#app");if(!me)throw new Error("Missing app root.");var fe=me,Ze=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}),et="Appeal Compass is designed only for individual residential homeowners appealing their own home; if interested in a similar tool for commercial properties please reach out here.",tt="Appeal Compass is busy helping other homeowners right now. You're in line \u2014 keep this page open and your assessment will start automatically.",nt="https://www.cookcountyassessoril.gov/exemptions",st="https://www.cookcountypropertyinfo.com/",he=P.length>0,I=he,M=he,ie=0,g=null,v=null,q=null,V=window.location.pathname==="/methodology";function a(t){return String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}function p(t,e){return`<a href="${a(t)}" target="_blank" rel="noreferrer">${a(e)}<span class="sr-only"> (opens in new tab)</span></a>`}function ge(t,e,n="?",s=""){ie+=1;let o=`tooltip-${ie}`;return`<span class="${s?`tooltip ${s}`:"tooltip"}">
+    <button class="tooltip-toggle" type="button" aria-label="${a(t)}" aria-expanded="false" aria-describedby="${o}">${a(n)}</button>
+    <span class="tooltip-bubble" id="${o}" role="tooltip">${a(e)}</span>
+  </span>`}function S(t,e){return ge(t,e)}function be(t,e){return ge(t,e,"!","warning-tooltip")}function j(t){let e=String(t??""),n=/https?:\/\/[^\s<>"']+/g,s="",o=0;for(let r of e.matchAll(n)){let i=r[0],l=r.index??0,b=i.match(/[.,;:)]+$/)?.[0]??"",y=i.slice(0,i.length-b.length);s+=a(e.slice(o,l)),s+=`<a href="${a(y)}" target="_blank" rel="noreferrer">${a(y)}<span class="sr-only"> (opens in new tab)</span></a>${a(b)}`,o=l+i.length}return s+a(e.slice(o))}function m(t){return t===null?"Not available":Ze.format(t)}function h(t,e=0){return t===null?"Not available":t.toLocaleString("en-US",{maximumFractionDigits:e})}function at(t){return t==="LIMITED"?"Limited public-data evidence":t==="STRONG"?"Strong":t==="MODERATE"?"Moderate":t}function ot(t){return t.split("_").filter(Boolean).map(e=>e.charAt(0).toUpperCase()+e.slice(1)).join(" ")}function rt(){let t=new Date,e=t.getFullYear(),n=String(t.getMonth()+1).padStart(2,"0"),s=String(t.getDate()).padStart(2,"0");return`${e}-${n}-${s}`}function T(t){let[e,n,s]=t.split("-"),o=Number(e),r=Number(n),i=Number(s);return!Number.isFinite(o)||!Number.isFinite(r)||!Number.isFinite(i)?t:new Date(Date.UTC(o,r-1,i)).toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric",timeZone:"UTC"})}function it(t,e){return t.length>0&&t.every(n=>e>n.closes)}function lt(t){let e=t.evidenceDeadline?`; evidence due ${T(t.evidenceDeadline)}`:"";return`${T(t.opens)} to ${T(t.closes)}${e}`}function ct(){return Object.entries(_).flatMap(([e,n])=>n.map(s=>`<li>${a(e)}: ${a(lt(s))}</li>`)).join("")||"<li>No configured Assessor filing windows are available in the current data.</li>"}function dt(t){let e=Object.values(_).flat();return it(e,t)?be("Assessor calendar warning",`All configured deadlines for this venue appear to be past as of ${t}. The data may be stale; verify at the official source before filing. You can still select this venue to prepare for the next session.`):""}function O(t){return`<div class="venue-option">
+    <div class="venue-choice-row">
+      <label class="venue-choice">
+        <input type="radio" name="venue" value="${t.value}" required>
+        <span>${a(t.label)}</span>
+      </label>
+      ${t.warning??""}
+    </div>
+    ${t.details}
+  </div>`}function ut(){let t=rt();return`<fieldset class="question-group venue-picker">
     <legend>Where do you want to appeal?</legend>
     <div class="venue-options">
-      ${I({value:"assessor",label:"Cook County Assessor",warning:Q("assessor",e),details:`<details class="venue-details">
+      ${O({value:"assessor",label:"Cook County Assessor",warning:dt(t),details:`<details class="venue-details">
           <summary>About the Assessor path</summary>
           <p>The Assessor is the first-level Cook County appeal venue. Start here for current-year assessment challenges and documented property-description errors.</p>
           <p>Use this path if you are within the township filing window or preparing for the next Assessor session.</p>
-          <p>Official source: ${b(C,"Cook County Assessor calendar")}. Verify at the official source before filing.</p>
-          <ul class="deadline-list">${Ue()}</ul>
+          <p>Official source: ${p($,"Cook County Assessor calendar")}. Verify at the official source before filing.</p>
+          <ul class="deadline-list">${ct()}</ul>
         </details>`})}
-      ${I({value:"bor",label:"Cook County Board of Review",warning:Q("bor",e),details:`<details class="venue-details">
+      ${O({value:"bor",label:"Cook County Board of Review",warning:be("Board of Review schedule status","Tax Year 2026 township filing dates have not been published. The official page still lists the prior 2025 schedule."),details:`<details class="venue-details">
           <summary>About the BOR path</summary>
           <p>The Board of Review is the second-level Cook County appeal venue and has its own township filing and evidence deadlines.</p>
           <p>Use this path if you are filing at BOR, preparing after an Assessor appeal, or checking BOR-specific comparable evidence.</p>
-          <p>Official source: ${b($,"Cook County BOR township dates")}. Verify at the official source before filing.</p>
-          <ul class="deadline-list">${Be()}</ul>
+          <p>Tax Year 2026 township dates are not published yet. Do not use the expired 2025 schedule as a current deadline.</p>
+          <p>Official source: ${p(x,"Cook County BOR dates and deadlines")}. Check the official page before filing.</p>
         </details>`})}
-      ${I({value:"ptab",label:"Illinois PTAB",details:`<details class="venue-details">
+      ${O({value:"ptab",label:"Illinois PTAB",details:`<details class="venue-details">
           <summary>About the PTAB path</summary>
           <p>PTAB is the Illinois state appeal board available after a written BOR decision for the same tax year.</p>
-          <p>Use this path only when you have, or are preparing for, a BOR decision notice. The deadline is generally 30 days from the written BOR decision date; Appeal Compass will not guess it without that date.</p>
-          <p>Official source: ${b(U,"Illinois PTAB")}. Verify at the official source before filing.</p>
+          <p>Use this path only when you have, or are preparing for, a BOR decision notice. The deadline is generally 30 days from the date on the written notice; Appeal Compass will not guess that date.</p>
+          <p>Official source: ${p(E,"Illinois PTAB")}. Verify at the official source before filing.</p>
         </details>`})}
     </div>
-  </fieldset>`}async function ie(e){let t=await fetch(e,{headers:{accept:"application/json"}}),n=await t.json();if(!t.ok||typeof n=="object"&&n&&"ok"in n&&n.ok===!1){let s=n.error?.message??"The request failed.";throw new Error(s)}return n}function D(e,t){let n=new FormData(e).get(t);return typeof n=="string"?n.trim():""}function je(e,t){let n=["jurisdiction","venue","ownershipType","assessorAppealFiled","assessorDecisionReceived","borAppealFiled","borDecisionReceived","borDecisionDate","purchasePrice","purchaseDate","appraisalValue","appraisalDate","actualSqft","actualAv","actualImprovementAv"];for(let s of n){let o=D(t,s);o&&e.set(s,o)}}function Z(e){return`<section class="progress" aria-live="polite"><p>${r(e)}</p></section>`}function le(){return`<svg aria-hidden="true" class="github-mark" viewBox="0 0 16 16" width="20" height="20">
+  </fieldset>`}async function ve(t){let e=await fetch(t,{headers:{accept:"application/json"}}),n=await e.json();if(!e.ok||typeof n=="object"&&n&&"ok"in n&&n.ok===!1){let s=n.error?.message??"The request failed.";throw new Error(s)}return n}function Y(t,e){let n=new FormData(t).get(e);return typeof n=="string"?n.trim():""}function pt(t,e){let n=["jurisdiction","venue","ownershipType","borNoticeReceived","borNoticeDate","purchasePrice","purchaseDate","appraisalValue","appraisalDate","actualSqft","actualAv","actualImprovementAv"];for(let s of n){let o=Y(e,s);o&&t.set(s,o)}}function le(t){return`<section class="progress" aria-live="polite"><p>${a(t)}</p></section>`}function ye(){return`<svg aria-hidden="true" class="github-mark" viewBox="0 0 16 16" width="20" height="20">
     <path fill="currentColor" d="M8 0C3.58 0 0 3.67 0 8.2c0 3.62 2.29 6.69 5.47 7.78.4.08.55-.18.55-.39 0-.19-.01-.84-.01-1.53-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.96-.82-1.16-.28-.16-.68-.55-.01-.56.63-.01 1.08.59 1.23.84.72 1.24 1.87.89 2.33.68.07-.53.28-.89.51-1.09-1.78-.21-3.64-.91-3.64-4.04 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.43 7.43 0 0 1 8 3.98c.68 0 1.36.09 2 .28 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.3.82 2.19 0 3.14-1.87 3.83-3.65 4.04.29.26.54.76.54 1.54 0 1.11-.01 2-.01 2.27 0 .21.15.47.55.39A8.08 8.08 0 0 0 16 8.2C16 3.67 12.42 0 8 0Z"/>
-  </svg>`}function Ve(){return`<footer class="site-footer">
-    <p class="project-credit">Appeal Compass is an open-source project developed by <a href="https://github.com/tommasodesantis" target="_blank" rel="noreferrer">Tommaso De Santis<span class="sr-only"> (opens in new tab)</span></a> under GPLv3.</p>
-    <a class="footer-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${le()}<span>View on GitHub</span><span class="sr-only"> (opens in new tab)</span></a>
-    <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Donations help the project grow and cover hosting and maintenance costs.<span class="sr-only"> (opens in new tab)</span></a>
-    <button type="button" id="report-problem" class="link-button">Report a problem</button>
-  </footer>`}function Ye(){return`<a class="header-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${le()}<span>View on GitHub</span><span class="sr-only"> (opens in new tab)</span></a>`}function ze(){let e=k?"":" disabled",t=k?`<div class="cf-turnstile" data-sitekey="${r(S)}"></div>`:'<p class="hint">Problem reporting is disabled until the Turnstile site key is configured.</p>';return`<section id="report-panel" class="report-panel" hidden>
+  </svg>`}function we(){return`<footer class="site-footer">
+    <div class="footer-project">
+      <strong>Appeal Compass</strong>
+      <p class="project-credit">An open-source GPLv3 project developed by <a href="https://github.com/tommasodesantis" target="_blank" rel="noreferrer">Tommaso De Santis<span class="sr-only"> (opens in new tab)</span></a></p>
+    </div>
+    <nav class="footer-links" aria-label="Project links">
+      <a class="footer-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${ye()}<span>GitHub</span><span class="sr-only"> (opens in new tab)</span></a>
+      <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support the project<span class="sr-only"> (opens in new tab)</span></a>
+      <button type="button" id="suggest-feature" class="link-button">Suggest a feature</button>
+      <button type="button" id="report-problem" class="link-button">Report a problem</button>
+    </nav>
+  </footer>`}function Se(){return`<a class="header-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${ye()}<span>View on GitHub</span><span class="sr-only"> (opens in new tab)</span></a>`}function Te(){let t=I?"":" disabled",e=I?`<div class="cf-turnstile" data-sitekey="${a(P)}"></div>`:'<p class="hint">Problem reporting is disabled until the Turnstile site key is configured.</p>';return`<section id="report-panel" class="report-panel" hidden>
     <div class="report-card" role="dialog" aria-modal="true" aria-labelledby="report-title">
       <button type="button" id="close-report" class="secondary close-button">Close</button>
       <h2 id="report-title">Report a problem</h2>
       <form id="report-form" class="stack">
         <label>
           <span>Category</span>
-          <select name="category" required${e}>
+          <select name="category" required${t}>
             <option value="">Choose a category</option>
             <option value="wrong_deadline">Wrong deadline</option>
             <option value="wrong_jurisdiction">Wrong jurisdiction info</option>
@@ -90,60 +98,56 @@ function y(e){return e==="assessor"?"Total AV":"Improvement AV"}function h(e){le
         </label>
         <label>
           <span>Description</span>
-          <textarea name="description" rows="5" maxlength="4000" required${e}></textarea>
+          <textarea name="description" rows="5" maxlength="4000" required${t}></textarea>
         </label>
         <label>
           <span>Optional PIN/context</span>
-          <input name="context" id="report-context" maxlength="2000"${e}>
+          <input name="context" id="report-context" maxlength="2000"${t}>
         </label>
-        ${t}
+        ${e}
         <div id="report-status" aria-live="polite"></div>
-        <button type="submit"${e}>Submit report</button>
+        <button type="submit"${t}>Submit report</button>
       </form>
     </div>
-  </section>`}function Ge(){return`<section id="entity-refusal-panel" class="modal-panel" hidden>
+  </section>`}function mt(){return`<section id="entity-refusal-panel" class="modal-panel" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="entity-refusal-title">
       <button type="button" id="close-entity-refusal" class="secondary close-button">Close</button>
       <h2 id="entity-refusal-title">Residential homeowners only</h2>
-      <p>${r(Me).replace("here.",'<a href="#contact-panel" id="open-contact-from-refusal">here</a>.')}</p>
+      <p>${a(et).replace("here.",'<a href="#contact-panel" id="open-contact-from-refusal">here</a>.')}</p>
     </div>
-  </section>`}function Xe(){let e=L?"":" disabled",t=L?`<div class="cf-turnstile" data-sitekey="${r(S)}"></div>`:'<p class="hint">Contact is disabled until the Turnstile site key is configured.</p>';return`<section id="contact-panel" class="modal-panel" hidden>
+  </section>`}function Ae(){let t=M?"":" disabled",e=M?`<div class="cf-turnstile" data-sitekey="${a(P)}"></div>`:'<p class="hint">Contact is disabled until the Turnstile site key is configured.</p>';return`<section id="contact-panel" class="modal-panel" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="contact-title">
       <button type="button" id="close-contact" class="secondary close-button">Close</button>
       <h2 id="contact-title">Commercial-property interest</h2>
       <form id="contact-form" class="stack">
+        <input type="hidden" name="topic" id="contact-topic" value="commercial_interest">
         <label>
           <span>Name (optional)</span>
-          <input name="name" maxlength="120"${e}>
+          <input name="name" maxlength="120"${t}>
         </label>
         <label>
           <span>Email (optional)</span>
-          <input name="email" type="email" maxlength="254"${e}>
+          <input name="email" type="email" maxlength="254"${t}>
         </label>
         <label>
           <span>Message</span>
-          <textarea name="message" rows="5" maxlength="4000" required${e}></textarea>
+          <textarea name="message" rows="5" maxlength="4000" required${t}></textarea>
         </label>
-        ${t}
+        ${e}
         <div id="contact-status" aria-live="polite"></div>
-        <button type="submit"${e}>Send message</button>
+        <button type="submit"${t}>Send message</button>
       </form>
     </div>
-  </section>`}function Ke(e=null){let t=e?[e]:["Looking up your property...","Fetching assessment history...","Finding similar homes...","Building the evidence summary..."],n=0,s=t[0]??"",o=document.querySelector("#progress");o&&(o.innerHTML=Z(t[n]??s));let a=window.setInterval(()=>{n=(n+1)%t.length;let i=document.querySelector("#progress");i&&(i.innerHTML=Z(t[n]??s))},650);return()=>window.clearInterval(a)}async function Je(){try{let e=await ie("/api/queue");return e.busy?e.message??He:null}catch{return null}}function Qe(){Ie.innerHTML=`
+  </section>`}function ft(t=null){let e=t?[t]:["Looking up your property...","Fetching assessment history...","Finding similar homes...","Building the evidence summary..."],n=0,s=e[0]??"",o=document.querySelector("#progress");o&&(o.innerHTML=le(e[n]??s));let r=window.setInterval(()=>{n=(n+1)%e.length;let i=document.querySelector("#progress");i&&(i.innerHTML=le(e[n]??s))},650);return()=>window.clearInterval(r)}async function ht(){try{let t=await ve("/api/queue");return t.busy?t.message??tt:null}catch{return null}}function gt(){fe.innerHTML=`
     <header class="topline">
       <div class="topline-head">
         <h1>Appeal Compass</h1>
-        ${Ye()}
+        ${Se()}
       </div>
-      <details class="tool-description">
-        <summary>What this tool does</summary>
-        <p>Appeal Compass screens public data for residential property-tax appeal evidence. It is open-source and currently runs on donations. <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support it on Ko-fi<span class="sr-only"> (opens in new tab)</span></a>.</p>
-      </details>
-      <p class="lede">Enter a PIN. A PIN is the 14-digit parcel number on your assessment notice, tax bill, or property record card.</p>
+      <p class="tool-description">Appeal Compass screens public data for residential property-tax appeal evidence. It is open-source and currently runs on donations. <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support it on Ko-fi<span class="sr-only"> (opens in new tab)</span></a>. If interested in a similar tool for commercial properties <a href="#contact-panel" id="open-commercial-interest">reach out here</a>.</p>
     </header>
 
     <section class="panel" aria-labelledby="step-one">
-      <div class="step-label">Step 1</div>
       <h2 id="step-one">Find the property</h2>
       <form id="case-form" class="stack">
         <div id="form-error" aria-live="polite"></div>
@@ -155,14 +159,17 @@ function y(e){return e==="assessor"?"Total AV":"Improvement AV"}function h(e){le
         </label>
         <p class="hint">More jurisdictions will be added.</p>
         <div class="lookup-grid">
-          <label>
-            <span>PIN</span>
-            <input name="pin" autocomplete="off" inputmode="numeric" placeholder="03-00-000-000-0001" required>
-          </label>
+          <div class="lookup-field">
+            <div class="field-label-row">
+              <label for="pin-input">PIN</label>
+              ${S("What is a PIN?","A PIN is the 14-digit parcel number on your assessment notice, tax bill, or property record card.")}
+            </div>
+            <input id="pin-input" name="pin" autocomplete="off" inputmode="numeric" placeholder="03-00-000-000-0001" required>
+          </div>
         </div>
-        <p class="hint pin-help">Don't know your PIN? You can recover it from the ${b(se,"Cook County Property Tax Portal")}.</p>
+        <p class="hint pin-help">Don't know your PIN? You can recover it from the ${p(st,"Cook County Property Tax Portal")}.</p>
 
-        ${We()}
+        ${ut()}
 
         <fieldset class="question-group">
           <legend>Ownership type</legend>
@@ -178,79 +185,20 @@ function y(e){return e==="assessor"?"Total AV":"Improvement AV"}function h(e){le
           </label>
         </fieldset>
 
-        <fieldset class="question-group">
-          <legend>Assessor appeal status</legend>
-          <p>Have you already filed an Assessor appeal for this year?</p>
+        <fieldset class="question-group conditional" data-conditional="ptabNotice" hidden>
+          <legend>PTAB timing</legend>
+          <p>Have you received the written Board of Review decision notice?</p>
           <div class="choice-row">
-            <label><input type="radio" name="assessorAppealFiled" value="yes" required><span>Yes</span></label>
-            <label><input type="radio" name="assessorAppealFiled" value="no" required><span>No</span></label>
+            <label><input type="radio" name="borNoticeReceived" value="yes"><span>Yes</span></label>
+            <label><input type="radio" name="borNoticeReceived" value="no"><span>No</span></label>
           </div>
-          <div class="conditional" data-conditional="assessorDecision" hidden>
-            <p>Have you already received the Assessor decision?</p>
-            <div class="choice-row">
-              <label><input type="radio" name="assessorDecisionReceived" value="yes"><span>Yes</span></label>
-              <label><input type="radio" name="assessorDecisionReceived" value="no"><span>No</span></label>
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset class="question-group">
-          <legend>Board of Review appeal status</legend>
-          <p>Have you already filed a Board of Review appeal for this year?</p>
-          <div class="choice-row">
-            <label><input type="radio" name="borAppealFiled" value="yes" required><span>Yes</span></label>
-            <label><input type="radio" name="borAppealFiled" value="no" required><span>No</span></label>
-          </div>
-          <div class="conditional" data-conditional="borDecision" hidden>
-            <p>Have you already received the BOR decision?</p>
-            <div class="choice-row">
-              <label><input type="radio" name="borDecisionReceived" value="yes"><span>Yes</span></label>
-              <label><input type="radio" name="borDecisionReceived" value="no"><span>No</span></label>
-            </div>
-          </div>
-          <div class="conditional" data-conditional="borDecisionDate" hidden>
+          <div class="conditional" data-conditional="ptabNoticeDate" hidden>
             <label>
-              <span>BOR decision date</span>
-              <input name="borDecisionDate" type="date">
+              <span>Date on the written BOR decision notice</span>
+              <input name="borNoticeDate" type="date">
             </label>
           </div>
         </fieldset>
-
-        <details class="evidence">
-          <summary>Add your own evidence</summary>
-          <div class="evidence-grid">
-            <label>
-              <span>Purchase price</span>
-              <input name="purchasePrice" inputmode="decimal" data-evidence-input>
-            </label>
-            <label>
-              <span>Purchase date</span>
-              <input name="purchaseDate" type="date" data-evidence-input>
-            </label>
-            <label>
-              <span>Appraisal value</span>
-              <input name="appraisalValue" inputmode="decimal" data-evidence-input>
-            </label>
-            <label>
-              <span>Appraisal date</span>
-              <input name="appraisalDate" type="date" data-evidence-input>
-            </label>
-            <label>
-              <span>Actual sqft</span>
-              <input name="actualSqft" inputmode="decimal" aria-describedby="actual-help" data-evidence-input>
-            </label>
-            <label>
-              <span>Actual total AV</span>
-              <input name="actualAv" inputmode="decimal" data-evidence-input>
-            </label>
-            <label>
-              <span>Actual improvement AV</span>
-              <input name="actualImprovementAv" inputmode="decimal" data-evidence-input>
-            </label>
-          </div>
-          <p id="actual-help" class="hint">User-supplied values are labeled documentation-required and are used only when official public data is missing.</p>
-          <button type="button" id="clear-evidence" class="secondary">Clear evidence</button>
-        </details>
 
         <div class="actions">
           <button type="submit">Review my case</button>
@@ -260,79 +208,249 @@ function y(e){return e==="assessor"?"Total AV":"Improvement AV"}function h(e){le
 
     <div id="progress"></div>
     <div id="results"></div>
-    ${Ve()}
-    ${ze()}
-    ${Ge()}
-    ${Xe()}
-  `}function N(e){let t=document.querySelector("#form-error");t&&(t.innerHTML=e?`<section class="error inline-error" role="alert">${r(e)}</section>`:"")}function w(e,t=!1){let n=document.querySelector("#report-status");n&&(n.innerHTML=e?`<p class="${t?"error inline-error":"notice inline-error"}">${r(e)}</p>`:"")}function T(e,t=!1){let n=document.querySelector("#contact-status");n&&(n.innerHTML=e?`<p class="${t?"error inline-error":"notice inline-error"}">${r(e)}</p>`:"")}function Ze(){let e=document.querySelector("#report-panel"),t=document.querySelector("#report-context");if(!e)return;t&&f&&(t.value=`PIN ${f.case.parcel.pinFormatted}; venue ${f.routing.venue}; generated ${f.generatedAt}`),w(k?"":"Problem reporting is disabled until the Turnstile site key is configured.",!0),e.hidden=!1,e.querySelector("select, textarea, input, button")?.focus()}function ce(){let e=document.querySelector("#report-panel");e&&(e.hidden=!0)}function et(){let e=document.querySelector("#entity-refusal-panel");if(!e)return;e.hidden=!1,e.querySelector("a, button")?.focus()}function q(){let e=document.querySelector("#entity-refusal-panel");e&&(e.hidden=!0)}function tt(){let e=document.querySelector("#contact-panel");if(!e)return;T(L?"":"Contact is disabled until the Turnstile site key is configured.",!0),e.hidden=!1,e.querySelector("input, textarea, button")?.focus()}function ue(){let e=document.querySelector("#contact-panel");e&&(e.hidden=!0)}function F(e,t){let n=new FormData(e).get(t);return typeof n=="string"?n:""}function M(e,t,n){let s=e.querySelector(`[data-conditional="${t}"]`);if(s){s.hidden=!n;for(let o of Array.from(s.querySelectorAll("input, select, textarea"))){if(!(o instanceof HTMLInputElement||o instanceof HTMLSelectElement||o instanceof HTMLTextAreaElement))continue;let a=o;a.disabled=!n,a.required=n,n||(a instanceof HTMLInputElement&&a.type==="radio"?a.checked=!1:a.value="")}}}function E(e){let t=F(e,"assessorAppealFiled")==="yes",n=F(e,"borAppealFiled")==="yes",s=F(e,"borDecisionReceived")==="yes";M(e,"assessorDecision",t),M(e,"borDecision",n),M(e,"borDecisionDate",n&&s)}function nt(e){return N(""),E(e),e.reportValidity()?D(e,"ownershipType")!=="individual"?(et(),!1):!0:!1}function st(e){return e.length===0?"":`<section class="warnings" aria-label="Warnings"><h2>Warnings</h2><ul>${e.map(t=>`<li>${H(t)}</li>`).join("")}</ul></section>`}function ot(){return`<section class="panel" aria-labelledby="exemptions">
-    <h2 id="exemptions">Exemptions and past-year corrections</h2>
-    <p>Exemptions are fixed reductions in taxable value for owner-occupants, seniors, veterans, people with disabilities, and some other homeowners. They can be worth more than an appeal.</p>
-    <p>Check your exemptions on the ${b(qe,"Cook County Assessor exemptions page")} and the ${b(se,"Cook County Property Tax Portal")}. Bring documentation for any missing or incorrect exemption.</p>
-    <p>A Certificate of Error is a Cook County process to fix past-year mistakes - like a missed exemption or wrong property facts - which can lead to a refund. Ask the Assessor's office about it.</p>
-  </section>`}function rt(e){let t=e.routing,n=t.officialUrl?`<a href="${r(t.officialUrl)}" target="_blank" rel="noreferrer">Verify at the official source before filing</a>`:"";if(!t.deadline)return`<p>No computed deadline. ${n}</p>`;let s=t.daysRemaining===null?"":` ${t.daysRemaining>=0?`${t.daysRemaining} days remaining.`:`${Math.abs(t.daysRemaining)} days past the computed deadline.`}`;return`<p><strong>Deadline:</strong> ${r(t.deadline)}.${r(s)} ${n}</p>`}function at(e){let t=e.evidence.comparableAnalysis,n=v("What comparable profile means",'A "profile" is the set of matching rules this tool uses to pick similar homes for the specific venue: size, age, neighborhood, and which assessment number is compared, because each venue weighs comparables differently.'),s=t.status==="ok"?`<p>Comparable analysis completed with the ${r(t.profileLabel)} profile using ${r(t.metricLabel)} per square foot. ${n}</p>`:`<p>${r(t.note)}</p>`,o=v("What similarity score means","Lower similarity scores mean the comparable is more similar to the subject based on size, age, and distance."),a=y(t.profileKey),i=t.exhibit.map(u=>`<tr>
-        <td>${r(u.comparable.pinFormatted)}</td>
-        <td>${u.distanceKm===null?"Not available":g(u.distanceKm,2)}</td>
-        <td>${r(u.comparable.neighborhood??"Not available")}</td>
-        <td>${r(u.comparable.propertyClass??"Not available")}</td>
-        <td>${g(u.comparable.buildingSqft)}</td>
-        <td>${r(u.comparable.yearBuilt??"Not available")}</td>
-        <td>${u.comparable.saleDate?r(x(u.comparable.saleDate)):"Not available"}</td>
-        <td>${m(u.comparable.salePrice)}</td>
-        <td>${r(a)}</td>
-        <td>${m(u.avPerSqft)}</td>
-        <td>${g(u.similarity,3)}</td>
-      </tr>`).join(""),d=i.length===0?"<p>No lower-assessed comparable exhibit is available from the current public data.</p>":`<div class="table-wrap"><table>
-          <thead><tr><th>PIN</th><th>Distance km</th><th>Neighborhood</th><th>Property class</th><th>Building sqft</th><th>Year built</th><th>Sale date</th><th>Sale price</th><th>Assessment type</th><th>Assessment $/sqft</th><th>Similarity score ${o}</th></tr></thead>
-          <tbody>${i}</tbody>
-        </table></div>`;return`<section class="panel" aria-labelledby="step-four">
-    <div class="step-label">Step 4</div>
-    <h2 id="step-four">Evidence summary</h2>
-    <p class="metric-line"><strong>Evidence level:</strong> ${r(Ne(e.evidence.tier))}. ${r(e.evidence.tierMessage)} ${v("What evidence level means","The evidence level is a rough screen of how much public data supports spending time on an appeal.")}</p>
-    ${s}
-    <p><strong>Pool:</strong> ${g(t.poolSize)} similar homes, ${r(t.scope??"no scope")}; subject ${r(t.metricLabel)}/sqft ${m(t.subjectAvPerSqft)}; median ${m(t.medianAvPerSqft)}; gap ${g(t.gapPct,1)}%.</p>
-    ${d}
-    <h3 class="heading-with-tooltip">Arguments ${v("What arguments mean","An argument is a distinct reason the assessment may be too high: uniformity, overvaluation, description error, or assessment shock. Strength labels are rough screens, not legal conclusions.")}</h3>
-    ${e.evidence.arguments.length?`<ul>${e.evidence.arguments.map(u=>`<li><strong>${r(u.argumentType)}:</strong> ${r(u.text)}</li>`).join("")}</ul>`:"<p>No strong public-data argument was found. Add sale, appraisal, condition, or factual-error evidence if available.</p>"}
-    <h3 class="heading-with-tooltip">Rough savings estimate ${v("How rough savings are estimated","Estimated savings = \u0394AV \xD7 E \xD7 r, where \u0394AV is the assessed-value reduction, E is the state equalizer, and r is the assumed tax rate. The range is shown as \xB120% and is not a promise.")}</h3>
-    <p>${m(e.evidence.savingsAssumptions.low)} to ${m(e.evidence.savingsAssumptions.high)}, with point estimate ${m(e.evidence.savingsAssumptions.point)}.</p>
-    <p class="hint">Assumes equalizer ${e.evidence.savingsAssumptions.stateEqualizer} and ${r(e.evidence.savingsAssumptions.taxRateSource)}; this is a rough range, not a promise.</p>
-  </section>`}function pe(e,t){f=e;let n=me();n&&W(n,t,e);let s=e.case.parcel,o=[s.address,s.city,s.zipCode].filter(Boolean).join(", "),a=[e.case.userEvidence.actualSqft?`Actual sqft ${g(e.case.userEvidence.actualSqft)}`:"",e.case.userEvidence.actualAv?`Actual AV ${m(e.case.userEvidence.actualAv)}`:"",e.case.userEvidence.actualImprovementAv?`Actual improvement AV ${m(e.case.userEvidence.actualImprovementAv)}`:""].filter(Boolean),i=new URLSearchParams(t);i.set("pin",s.pin);let d=document.querySelector("#results");d&&(d.innerHTML=`
-    <section class="notice"><strong>${r(e.evidence.disclaimers[0])}</strong></section>
-    <section class="panel" aria-labelledby="step-three">
-      <div class="step-label">Step 3</div>
-      <h2 id="step-three">Routing decision</h2>
-      <p class="headline">${r(e.routing.headline)}</p>
-      ${rt(e)}
-      <ul>${e.routing.reasoning.map(u=>`<li>${H(u)}</li>`).join("")}</ul>
+    ${we()}
+    ${Te()}
+    ${mt()}
+    ${Ae()}
+  `}function bt(){fe.innerHTML=`
+    <header class="topline">
+      <div class="topline-head">
+        <h1>Methodology</h1>
+        ${Se()}
+      </div>
+      <p class="lede">How Appeal Compass screens public data for residential property-tax appeal evidence.</p>
+      <p><a href="/">Back to Appeal Compass</a></p>
+    </header>
+
+    <nav class="methodology-nav panel" aria-label="Methodology sections">
+      <a href="#scope">Scope</a>
+      <a href="#data-years">Data and years</a>
+      <a href="#comparables">Comparables</a>
+      <a href="#edge-cases">Edge cases</a>
+      <a href="#deadlines">Deadlines</a>
+      <a href="#savings">Savings</a>
+    </nav>
+
+    <section class="panel stack" id="scope">
+      <p class="eyebrow">01 / Scope</p>
+      <h2>What Appeal Compass does</h2>
+      <p>Appeal Compass is a screening tool for individual Cook County homeowners. It uses a parcel PIN, the selected appeal venue, public property records, assessment values, sales, and residential characteristics to identify evidence worth reviewing.</p>
+      <p>It does not file an appeal, decide legal eligibility, inspect the property, verify every reduction factor, or predict an official result. Every property fact, comparable, value, and deadline must be checked against the official source before filing.</p>
     </section>
+
+    <section class="panel stack" id="data-years">
+      <p class="eyebrow">02 / Data and years</p>
+      <h2>How public rows are selected</h2>
+      <p>The tool first requests the current assessment-year parcel, characteristic, and assessed-value rows. If a current row exists but has no usable assessed value, it uses the most recent value-bearing year and labels that limitation. Subject and comparable assessment years remain visible in the results and exports.</p>
+      <p>If residential characteristics are missing, the tool may ask for only the field needed to continue, such as building area or Improvement AV. Values entered by a user are fallback inputs and are labeled user-supplied.</p>
+      <p>Data notes combine related limitations, such as missing characteristics and older assessed values, so the same issue is not repeated several times.</p>
+    </section>
+
+    <section class="panel stack" id="comparables">
+      <p class="eyebrow">03 / Comparable evidence</p>
+      <h2>Selection, metrics, and interpretation</h2>
+      <p>Residential uniformity evidence uses Improvement AV per building square foot. Total AV is shown for context, overvaluation checks, value breakdowns, and savings estimates, but Total AV alone does not generate a residential uniformity argument.</p>
+      <p>The candidate pool starts with the same public property class and township. Venue-specific profiles apply building-size and year-built rules, prefer same-neighborhood homes when enough records exist, and compare known assessment years consistently. The selected-comparables table shows the full filtered pool, including rows assessed above the subject; a higher-assessed row is context, not support for a reduction.</p>
+      <p>A lower similarity score means closer observable characteristics. Scores 0.00-0.10 are excellent, 0.10-0.20 are good, 0.20-0.35 are usable, 0.35-0.50 are broad matches that require careful review, and scores above 0.50 are questionable unless alternatives are sparse.</p>
+      <p>The evidence level summarizes the available public-data support. It is a screening label, not a legal conclusion. A pool can contain several homes while producing no reduction argument when the subject is already assessed below the pool median.</p>
+    </section>
+
+    <section class="panel stack" id="edge-cases">
+      <p class="eyebrow">04 / Property edge cases</p>
+      <h2>What is included, limited, or blocked</h2>
+      <dl class="methodology-cases">
+        <div><dt>Residential condominiums</dt><dd>Class 299 is supported and compared with other Class 299 records. Condominium analysis is limited to public parcel-level fields and cannot evaluate unit condition, floor, view, parking, association finances, or other private attributes unless those appear in the source data.</dd></div>
+        <div><dt>Small mixed-use homes</dt><dd>Supported Class 2 dwelling records, including Class 212, may be reviewed, but mixed residential and commercial use can make residential comparables less reliable. The result carries a caveat and should be checked manually.</dd></div>
+        <div><dt>Multi-family and commercial</dt><dd>Class 3 multi-family property, Class 5 commercial or industrial property, and other non-Class-2 major classes are blocked before comparable analysis.</dd></div>
+        <div><dt>Non-dwelling Class 2 records</dt><dd>Vacant land, cooperatives, buildings with more than six units, non-residential improvements, and special or atypical Class 2 codes are blocked. Current excluded codes are 200, 201, 213, 218, 219, 224, 225, 236, 239, 240, 241, 288, 290, 297, and 298.</dd></div>
+        <div><dt>Unknown class</dt><dd>If the parcel class is missing or malformed, the tool stops rather than guessing that the property is a supported home.</dd></div>
+        <div><dt>Missing or sparse comparables</dt><dd>The tool explains which data is missing. It does not create a favorable argument from a small pool or from higher-assessed homes. If selected rows exist, they remain visible for transparent review.</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel stack">
+      <p class="eyebrow">05 / Land and arguments</p>
+      <h2>Separate checks prevent misleading comparisons</h2>
+      <p>The land-component check compares Land AV per land square foot. This helps distinguish lot-size differences from building uniformity evidence. A large lot or unusual land assessment may explain a Total AV difference without supporting a building-assessment reduction.</p>
+      <p>Potential arguments are generated only when their underlying checks pass. These may include uniformity, overvaluation, description error, or assessment shock. \u201CNo strong public-data argument\u201D means only that this screen did not find one; condition, vacancy, demolition, exemptions, appraisal evidence, and other facts may still matter.</p>
+    </section>
+
+    <section class="panel stack" id="deadlines">
+      <p class="eyebrow">06 / Deadlines</p>
+      <h2>How dates and unavailable schedules are handled</h2>
+      <p>Assessor dates come from the official Tax Year 2026 township calendar. Townships without published dates are labeled \u201Cdates not published yet\u201D; the tool does not invent a date.</p>
+      <p>The official Board of Review dates page currently shows the prior Tax Year 2025 schedule, not a Tax Year 2026 township schedule. Appeal Compass therefore shows \u201C2026 BOR dates not published yet\u201D and links to the ${p(x,"official BOR dates page")} rather than reusing expired dates.</p>
+      <p>PTAB generally requires filing within 30 days after the written BOR decision notice. The notice day is excluded and the last day is included. If the last day is a Saturday, Sunday, or Illinois legal holiday, the date moves to the next business day. For Cook County, a later statutory date tied to the township's final-action transmission may apply; that transmission is not observable in the public inputs, so the displayed date is conservative and must be verified with ${p(E,"PTAB")}.</p>
+      <p>Official pages control. Check the ${p($,"Assessor calendar")}, ${p(x,"BOR dates page")}, or ${p(E,"PTAB site")} immediately before filing.</p>
+    </section>
+
+    <section class="panel stack" id="savings">
+      <p class="eyebrow">07 / Savings and exports</p>
+      <h2>Rough estimates, not promises</h2>
+      <p>The point estimate applies the possible assessed-value reduction, state equalizer, and displayed tax-rate source. The range is shown around that point estimate. Missing current values or a default county tax-rate assumption reduces confidence.</p>
+      <p>The print report and spreadsheet use the same selected comparable pool and similarity threshold as the screen. User-entered fallback values are labeled user-supplied. Taxes must still be paid on time while an appeal is pending.</p>
+    </section>
+
+    ${we()}
+    ${Te()}
+    ${Ae()}
+  `}function z(t){let e=document.querySelector("#form-error");e&&(e.innerHTML=t?`<section class="error inline-error" role="alert">${a(t)}</section>`:"")}function L(t,e=!1){let n=document.querySelector("#report-status");n&&(n.innerHTML=t?`<p class="${e?"error inline-error":"notice inline-error"}">${a(t)}</p>`:"")}function k(t,e=!1){let n=document.querySelector("#contact-status");n&&(n.innerHTML=t?`<p class="${e?"error inline-error":"notice inline-error"}">${a(t)}</p>`:"")}function vt(){let t=document.querySelector("#report-panel"),e=document.querySelector("#report-context");if(!t)return;e&&g&&(e.value=`PIN ${g.case.parcel.pinFormatted}; venue ${g.routing.venue}; generated ${g.generatedAt}`),L(I?"":"Problem reporting is disabled until the Turnstile site key is configured.",!0),t.hidden=!1,t.querySelector("select, textarea, input, button")?.focus()}function xe(){let t=document.querySelector("#report-panel");t&&(t.hidden=!0)}function yt(){let t=document.querySelector("#entity-refusal-panel");if(!t)return;t.hidden=!1,t.querySelector("a, button")?.focus()}function W(){let t=document.querySelector("#entity-refusal-panel");t&&(t.hidden=!0)}function B(t="commercial_interest"){let e=document.querySelector("#contact-panel");if(!e)return;let n=document.querySelector("#contact-title"),s=document.querySelector("#contact-topic");n&&(n.textContent=t==="feature_suggestion"?"Suggest a feature":"Commercial-property interest"),s&&(s.value=t),k(M?"":"Contact is disabled until the Turnstile site key is configured.",!0),e.hidden=!1,e.querySelector("input, textarea, button")?.focus()}function Le(){let t=document.querySelector("#contact-panel");t&&(t.hidden=!0)}function ce(t,e){let n=new FormData(t).get(e);return typeof n=="string"?n:""}function de(t,e,n){let s=t.querySelector(`[data-conditional="${e}"]`);if(s){s.hidden=!n;for(let o of Array.from(s.querySelectorAll("input, select, textarea"))){if(!(o instanceof HTMLInputElement||o instanceof HTMLSelectElement||o instanceof HTMLTextAreaElement)||o.closest("[data-conditional]")!==s)continue;let r=o;r.disabled=!n,r.required=n,n||(r instanceof HTMLInputElement&&r.type==="radio"?r.checked=!1:r.value="")}}}function N(t){let e=ce(t,"venue")==="ptab";de(t,"ptabNotice",e);let n=e&&ce(t,"borNoticeReceived")==="yes";de(t,"ptabNoticeDate",n)}function wt(t){return z(""),N(t),t.reportValidity()?Y(t,"ownershipType")!=="individual"?(yt(),!1):!0:!1}function St(t){let e=t.notices??t.warnings.map((n,s)=>({code:`legacy_${s}`,severity:"caution",title:"Data limitation",summary:n,details:[]}));return e.length===0?"":`<section class="data-notices" aria-labelledby="data-notes-heading">
+    <div class="section-heading-row">
+      <h2 id="data-notes-heading">Data notes</h2>
+      <span class="notice-count">${e.length}</span>
+    </div>
+    <div class="notice-grid">${e.map(n=>`<article class="data-note ${a(n.severity)}">
+          <h3>${a(n.title)}</h3>
+          <p>${j(n.summary)}</p>
+          ${n.details.length>0?`<details><summary>Details and next check</summary><ul>${n.details.map(s=>`<li>${j(s)}</li>`).join("")}</ul></details>`:""}
+        </article>`).join("")}</div>
+  </section>`}function Tt(t){let e=t.routing,n=t.case.parcel,s=t.case.userEvidence.borNoticeDate??t.case.userEvidence.borDecisionDate,o=e.venue==="ptab"&&s?`Written BOR notice dated ${T(s)}`:`${n.townshipName} township`,r=l=>l===null?"":l===0?"Today":l>0?`${l} days away`:`${Math.abs(l)} days ago`,i=(e.deadlines??[]).map(l=>`<div class="deadline-card">
+        <span>${a(l.label)}</span>
+        <strong>${a(T(l.date))}</strong>
+        ${l.daysRemaining===null?"":`<small>${a(r(l.daysRemaining))}</small>`}
+      </div>`).join("");return`<section class="panel deadline-panel" aria-labelledby="deadline-info">
+    <div class="section-heading-row">
+      <div>
+        <p class="eyebrow">Timing</p>
+        <h2 id="deadline-info">Deadline status</h2>
+      </div>
+      <span class="status-pill status-${a(e.actionStatus)}">${a(e.deadlineLabel??e.actionStatus)}</span>
+    </div>
+    <p class="deadline-headline">${a(e.headline)}</p>
+    ${i?`<div class="deadline-cards">${i}</div>`:`<div class="deadline-unavailable"><strong>${a(e.deadlineLabel??"Deadline unavailable")}</strong><span>Use the official source below for updates.</span></div>`}
+    <dl class="compact-facts">
+      <div><dt>Venue</dt><dd>${a(t.venue.name)}</dd></div>
+      <div><dt>Basis</dt><dd>${a(o)}</dd></div>
+      <div><dt>Official deadline source</dt><dd>${e.officialUrl?p(e.officialUrl,"Check official dates"):"Not available"}</dd></div>
+      <div><dt>Filing rules</dt><dd>${p(t.venue.rulesUrl,"Review what to submit")}</dd></div>
+    </dl>
+    <details class="reasoning-details"><summary>How this status was determined</summary><ul>${e.reasoning.map(l=>`<li>${j(l)}</li>`).join("")}</ul></details>
+  </section>`}function At(t){let e=t.evidence.comparableAnalysis.missingFields;return e.length===0?"":`<section class="panel" aria-labelledby="missing-public-data">
+    <h2 id="missing-public-data">Missing public data</h2>
+    <p>Some public fields needed for the comparable analysis were missing. If you have reliable values, add only those missing fields and rerun the review.</p>
+    <form id="missing-evidence-form" class="stack">
+      <div class="evidence-grid">
+        ${e.map(n=>`<label>
+              <span>${a(n.label)}</span>
+              <input name="${a(n.name)}" inputmode="decimal" required>
+              <span class="hint field-help-line">${a(n.helpText)}</span>
+            </label>`).join("")}
+      </div>
+      <p class="hint">These values are used only as fallback inputs and will be labeled user-supplied.</p>
+      <button type="submit">Rerun with fallback values</button>
+    </form>
+  </section>`}function xt(t){let e=t.evidence.comparableAnalysis,n=t.evidence.landAssessment,s=p(t.venue.rulesUrl,"See official rules"),o=S("What comparable profile means",'A "profile" is the set of matching rules this tool uses to pick similar homes for the specific venue: size, age, neighborhood, and which assessment number is compared, because each venue weighs comparables differently.'),r=S("What similarity score means","Lower similarity scores mean the comparable is more similar to the subject based on size, age, and distance."),i=A(e.profileKey),l=R(e.pool,q),b=H(q),y=e.pool.length>0?`<div class="filter-row">
+        <label>
+          <span>Similarity score threshold</span>
+          <select id="similarity-filter">
+            ${J.map(d=>`<option value="${a(d.value)}"${d.value===b?" selected":""}>${a(d.label)}</option>`).join("")}
+          </select>
+        </label>
+        <p class="hint">0.00-0.10 excellent; 0.10-0.20 good; 0.20-0.35 usable; 0.35-0.50 broad match; above 0.50 questionable unless alternatives are sparse. Check every row before using it.</p>
+      </div>`:"",F=d=>{if(e.subjectAvPerSqft===null||e.subjectAvPerSqft<=0)return'<span class="comparison neutral">Subject unavailable</span>';let C=(d-e.subjectAvPerSqft)/e.subjectAvPerSqft*100;return Math.abs(C)<.5?'<span class="comparison neutral">About the same</span>':C<0?`<span class="comparison lower">${h(Math.abs(C),1)}% lower</span>`:`<span class="comparison higher">${h(C,1)}% higher</span>`},K=l.map(d=>`<tr>
+        <td>${a(d.comparable.pinFormatted)}</td>
+        <td>${d.distanceKm===null?"Not available":h(d.distanceKm,2)}</td>
+        <td>${a(d.comparable.neighborhood??"Not available")}</td>
+        <td>${a(d.comparable.propertyClass??"Not available")}</td>
+        <td>${h(d.comparable.buildingSqft)}</td>
+        <td>${a(d.comparable.yearBuilt??"Not available")}</td>
+        <td>${d.comparable.saleDate?a(T(d.comparable.saleDate)):"Not available"}</td>
+        <td>${m(d.comparable.salePrice)}</td>
+        <td>${a(i)}</td>
+        <td>${m(d.avPerSqft)}</td>
+        <td>${F(d.avPerSqft)}</td>
+        <td>${h(d.similarity,3)}</td>
+      </tr>`).join(""),Ee=K.length===0?`<p class="empty-state">${e.pool.length>0?"No selected homes meet the current similarity filter.":"No comparable rows could be selected from the available public data."}</p>`:`<div class="table-wrap"><table>
+          <caption>${l.length} selected comparable ${l.length===1?"home":"homes"}; rows assessed above the subject are included for transparency.</caption>
+          <thead><tr><th>PIN</th><th>Distance km</th><th>Neighborhood</th><th>Property class</th><th>Building sqft</th><th>Year built</th><th>Sale date</th><th>Sale price</th><th>Assessment metric</th><th>${a(e.metricLabel)}/sqft</th><th>Compared with subject</th><th>Similarity score ${r}</th></tr></thead>
+          <tbody>${K}</tbody>
+        </table></div>`,Pe=t.evidence.tier==="LIMITED"?`${a(t.evidence.tierMessage)} ${s}.`:a(t.evidence.tierMessage),Re=e.poolSize===0||e.gapPct===null?"The available public data is not sufficient to compare the subject with a selected residential pool.":e.gapPct>0?`The subject is assessed ${h(e.gapPct,1)}% above the selected-pool median on ${e.metricLabel}/sqft. That difference may support a closer uniformity review, but each row still needs verification.`:e.gapPct<0?`The subject is assessed ${h(Math.abs(e.gapPct),1)}% below the selected-pool median on ${e.metricLabel}/sqft. These public comparables do not support a lower residential uniformity assessment.`:`The subject is aligned with the selected-pool median on ${e.metricLabel}/sqft, so this screen does not show a residential uniformity gap.`,Ie=t.evidence.arguments.length?t.evidence.arguments.map(d=>`<article class="argument-card">
+            <span class="argument-strength">${a(d.strength)}</span>
+            <h4>${a(ot(d.argumentType))}</h4>
+            <p>${a(d.text)}</p>
+          </article>`).join(""):'<div class="empty-state"><strong>No strong public-data argument was found.</strong><span>This does not rule out condition, appraisal, exemption, or factual-error evidence that is not present in the public data.</span></div>';return`<section class="panel evidence-panel" aria-labelledby="evidence-summary">
+    <div class="section-heading-row evidence-heading">
+      <div>
+        <p class="eyebrow">Public-data screen</p>
+        <h2 id="evidence-summary">Evidence summary</h2>
+      </div>
+      <span class="evidence-level level-${a(t.evidence.tier.toLowerCase())}">${a(at(t.evidence.tier))}</span>
+    </div>
+
+    <div class="evidence-verdict">
+      <h3>What the numbers say</h3>
+      <p>${a(Re)}</p>
+      <p class="hint">${Pe} ${S("What evidence level means","The evidence level is a rough screen of how much public data supports spending time on an appeal.")}</p>
+    </div>
+
+    <div class="metric-grid" aria-label="Comparable analysis key figures">
+      <div><span>Selected homes</span><strong>${h(e.poolSize)}</strong><small>${a(e.scope??"Scope unavailable")}</small></div>
+      <div><span>Subject ${a(e.metricLabel)}/sqft</span><strong>${m(e.subjectAvPerSqft)}</strong></div>
+      <div><span>Pool median</span><strong>${m(e.medianAvPerSqft)}</strong></div>
+      <div><span>Subject vs median</span><strong>${e.gapPct===null?"Not available":`${h(e.gapPct,1)}%`}</strong></div>
+    </div>
+
+    <details class="analysis-details">
+      <summary>Analysis method and value context</summary>
+      <p>${e.status==="ok"?`Comparable analysis completed with the ${a(e.profileLabel)} profile using ${a(e.metricLabel)}/sqft. ${o}`:a(e.note)}</p>
+      <p><strong>Total AV:</strong> Shown for value context, overvaluation checks, and savings estimates. It is not used by itself to generate residential uniformity evidence.</p>
+      <p><strong>Land check:</strong> ${a(n.note)} Subject Land AV/sqft ${m(n.subjectLandAvPerSqft)}; selected-pool median ${m(n.medianLandAvPerSqft)}.</p>
+    </details>
+
+    <div class="subsection-heading">
+      <div><p class="eyebrow">Comparable detail</p><h3>Selected comparable homes</h3></div>
+      <p>All selected rows are shown, not only homes assessed below the subject.</p>
+    </div>
+    ${y}
+    ${Ee}
+
+    <div class="subsection-heading"><div><p class="eyebrow">Assessment screen</p><h3 class="heading-with-tooltip">Potential appeal arguments ${S("What arguments mean","An argument is a distinct reason the assessment may be too high: uniformity, overvaluation, description error, or assessment shock. Strength labels are rough screens, not legal conclusions.")}</h3></div></div>
+    <div class="argument-grid">${Ie}</div>
+
+    <div class="savings-card">
+      <div><p class="eyebrow">If a reduction is supported</p><h3 class="heading-with-tooltip">Rough savings estimate ${S("How rough savings are estimated","Estimated savings = \u0394AV \xD7 E \xD7 r, where \u0394AV is the assessed-value reduction, E is the state equalizer, and r is the assumed tax rate. The range is shown as \xB120% and is not a promise.")}</h3></div>
+      <strong>${m(t.evidence.savingsAssumptions.low)} to ${m(t.evidence.savingsAssumptions.high)}</strong>
+      <span>Point estimate ${m(t.evidence.savingsAssumptions.point)}</span>
+    </div>
+    <p class="hint">Assumes equalizer ${t.evidence.savingsAssumptions.stateEqualizer} and ${a(t.evidence.savingsAssumptions.taxRateSource)}; this is a rough range, not a promise.</p>
+    <p><a href="/methodology">Read the methodology</a></p>
+  </section>`}function Lt(t,e){let n=p(t.venue.submissionUrl,"official submission page"),s=p(t.venue.rulesUrl,"official rules and requirements");return`<section class="panel" aria-labelledby="whats-next">
+    <h2 id="whats-next">What's Next?</h2>
+    <p>You can download a PDF summary of the comparative analysis shown above. If you decide to appeal at ${a(t.venue.name)}, you can submit that PDF with the other documents the venue requires as part of your evidence.</p>
+    <p>Double-check every Appeal Compass finding before filing. This evidence is not a guarantee that an appeal will succeed.</p>
+    <p>Other documented factors may also support a property-tax reduction, including condition issues, vacancy, demolition, incorrect property characteristics, recent sale or appraisal evidence, and other factual errors.</p>
+    <p>Some homeowners may qualify for exemptions, including homeowner, senior, senior freeze, disability, disabled veteran, returning veteran, home improvement, and long-time occupant exemptions. Verify eligibility on the ${p(nt,"Cook County Assessor exemptions page")}.</p>
+    <p>Before filing, review the ${n} and ${s} for exactly what to submit.</p>
+    <div class="actions">
+      <a class="button-link" href="/print?${e.toString()}">Print / Save as PDF</a>
+      <button type="button" id="download-comps" class="secondary">Download comps (.xlsx)</button>
+    </div>
+  </section>`}function G(t,e){g=t,v=new URLSearchParams(e),q=D(v.get("maxSimilarity"));let n=$e();n&&Z(n,e,t);let s=t.case.parcel,o=[s.address,s.city,s.zipCode].filter(Boolean).join(", "),r=[t.case.userEvidence.actualSqft?`Actual sqft ${h(t.case.userEvidence.actualSqft)}`:"",t.case.userEvidence.actualAv?`Actual AV ${m(t.case.userEvidence.actualAv)}`:"",t.case.userEvidence.actualImprovementAv?`Actual improvement AV ${m(t.case.userEvidence.actualImprovementAv)}`:""].filter(Boolean),i=new URLSearchParams(e);i.set("pin",s.pin);let l=document.querySelector("#results");l&&(l.innerHTML=`
+    <section class="notice"><strong>${a(t.evidence.disclaimers[0])}</strong></section>
+    ${Tt(t)}
 
     <section class="subject panel">
       <h2>Subject property</h2>
       <dl>
-        <div><dt>PIN</dt><dd>${r(s.pinFormatted)}</dd></div>
-        ${o?`<div><dt>Address</dt><dd>${r(o)}</dd></div>`:""}
-        <div><dt>Class / township</dt><dd>${r(s.propertyClass)} / ${r(s.townshipName)}</dd></div>
-        <div><dt>Building sqft</dt><dd>${g(s.buildingSqft)}</dd></div>
+        <div><dt>PIN</dt><dd>${a(s.pinFormatted)}</dd></div>
+        ${o?`<div><dt>Address</dt><dd>${a(o)}</dd></div>`:""}
+        <div><dt>Class / township</dt><dd>${a(s.propertyClass)} / ${a(s.townshipName)}</dd></div>
+        <div><dt>Building sqft</dt><dd>${h(s.buildingSqft)}</dd></div>
+        <div><dt>Land sqft</dt><dd>${h(s.landSqft)}</dd></div>
+        <div><dt>Assessment year</dt><dd>${h(s.assessmentYear)}</dd></div>
         <div><dt>Total AV</dt><dd>${m(s.currentAv)}</dd></div>
         <div><dt>Improvement AV</dt><dd>${m(s.currentImprovementAv)}</dd></div>
+        <div><dt>Land AV</dt><dd>${m(s.currentLandAv)}</dd></div>
       </dl>
-      ${a.length?`<p class="tagline">${r(a.join("; "))} - user-supplied; documentation required.</p>`:""}
+      <p class="hint">Total AV is context for value checks and savings estimates. Residential comparable evidence uses Improvement AV/sqft.</p>
+      ${r.length?`<p class="tagline">${a(r.join("; "))} - user-supplied.</p>`:""}
     </section>
 
-    ${at(e)}
+    ${St(t)}
 
-    <section class="panel" aria-labelledby="step-five">
-      <div class="step-label">Step 5</div>
-      <h2 id="step-five">${r(e.venue.name)} checklist</h2>
-      <p class="hint">Use this checklist to assemble documents before filing at the official venue.</p>
-      <ul>${e.venue.checklist.map(u=>`<li>${H(u)}</li>`).join("")}</ul>
-      <div class="actions">
-        <a class="button-link" href="/print?${i.toString()}">Print / Save as PDF</a>
-        <button type="button" id="download-comps" class="secondary">Download comps (.xlsx)</button>
-      </div>
-    </section>
+    ${At(t)}
 
-    ${ot()}
+    ${xt(t)}
 
-    ${st(e.warnings)}
-  `)}function ee(){f=null,N("");for(let e of["#results","#address-results"]){let t=document.querySelector(e);t&&(t.innerHTML="")}}async function it(e){ee();let t=Ke(await Je());try{let n=await ie(`/api/case?${e.toString()}`);ee(),pe(n,e)}catch(n){let s=document.querySelector("#results");s&&(s.innerHTML=`<section class="error" role="alert">${r(n instanceof Error?n.message:"The case could not be loaded.")}</section>`)}finally{t();let n=document.querySelector("#progress");n&&(n.innerHTML="")}}async function lt(e){if(!nt(e))return;let t=new URLSearchParams,n=D(e,"pin");if(je(t,e),n){t.set("pin",n),await it(t);return}let s=document.querySelector("#results");s&&(s.innerHTML='<section class="error" role="alert">Enter a PIN.</section>')}function ct(e,t){for(let n of Array.from(e.elements)){if(!(n instanceof HTMLInputElement||n instanceof HTMLSelectElement||n instanceof HTMLTextAreaElement)||!n.name)continue;let s=t.get(n.name);if(n instanceof HTMLInputElement&&n.type==="radio"){n.checked=s===n.value;continue}n.value=s??""}E(e)}function de(){let e=me();if(!e)return;let t=j(e);if(!t)return;let n=document.querySelector("#case-form");n&&ct(n,t.query),pe(t.payload,t.query)}function me(){try{return window.sessionStorage}catch{return null}}async function ut(e){if(!k){w("Problem reporting is disabled until the Turnstile site key is configured.",!0);return}if(!e.reportValidity())return;let t=new FormData(e),n=t.get("cf-turnstile-response");w("Submitting report...");let s=await fetch("/api/report",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({category:t.get("category"),description:t.get("description"),context:t.get("context"),turnstileToken:typeof n=="string"?n:""})}),o=await s.json();if(!s.ok||!o.ok){w(o.ok?"The report could not be submitted.":o.error?.message??"The report could not be submitted.",!0);return}w(`Report submitted: ${o.issueUrl}`),e.reset()}async function pt(e){if(!L){T("Contact is disabled until the Turnstile site key is configured.",!0);return}if(!e.reportValidity())return;let t=new FormData(e),n=t.get("cf-turnstile-response");T("Sending message...");let s=await fetch("/api/contact",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:t.get("name"),email:t.get("email"),message:t.get("message"),turnstileToken:typeof n=="string"?n:""})}),o=await s.json();if(!s.ok||!o.ok){T(o.ok?"The message could not be sent.":o.error?.message??"The message could not be sent.",!0);return}T(o.message??"Message sent."),e.reset()}function dt(){let e=document.querySelector("details.evidence");if(e)for(let t of Array.from(e.querySelectorAll("[data-evidence-input]")))(t instanceof HTMLInputElement||t instanceof HTMLTextAreaElement)&&(t.value="")}function O(e=null){for(let t of Array.from(document.querySelectorAll(".tooltip-toggle"))){if(t===e)continue;let n=t.getAttribute("aria-describedby"),s=n?document.getElementById(n):null;t.setAttribute("aria-expanded","false"),s&&s.removeAttribute("style")}}function mt(e,t){if(t.removeAttribute("style"),!window.matchMedia("(max-width: 760px)").matches)return;let n=e.getBoundingClientRect(),s=16,o=n.bottom+8,a=window.innerHeight-t.offsetHeight-s,i=Math.max(s,Math.min(o,a));t.style.position="fixed",t.style.inset=`${i}px ${s}px auto ${s}px`,t.style.width="auto",t.style.transform="none"}function ft(e){let t=e.getAttribute("aria-describedby"),n=t?document.getElementById(t):null;if(!n)return;let s=e.getAttribute("aria-expanded")!=="true";O(s?e:null),e.setAttribute("aria-expanded",String(s)),s?mt(e,n):n.removeAttribute("style")}function gt(){if(!f)return;let e=K(f),t=new ArrayBuffer(e.byteLength);new Uint8Array(t).set(e);let n=new Blob([t],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),s=URL.createObjectURL(n),o=document.createElement("a");o.href=s,o.download=X(f),document.body.appendChild(o),o.click(),o.remove(),URL.revokeObjectURL(s)}Qe();var te=document.querySelector("#case-form");te&&E(te);document.addEventListener("submit",e=>{let t=e.target;t instanceof HTMLFormElement&&t.id==="case-form"&&(e.preventDefault(),lt(t)),t instanceof HTMLFormElement&&t.id==="report-form"&&(e.preventDefault(),ut(t)),t instanceof HTMLFormElement&&t.id==="contact-form"&&(e.preventDefault(),pt(t))});document.addEventListener("change",e=>{let t=e.target;if(t instanceof HTMLInputElement||t instanceof HTMLSelectElement||t instanceof HTMLTextAreaElement){let n=t.form;n?.id==="case-form"&&(N(""),E(n))}});document.addEventListener("click",e=>{let t=e.target;if(t instanceof HTMLElement){let n=t.closest(".tooltip-toggle");if(n){ft(n);return}O()}t instanceof HTMLElement&&t.id==="clear-evidence"&&dt(),t instanceof HTMLElement&&t.id==="download-comps"&&gt(),t instanceof HTMLElement&&t.id==="report-problem"&&Ze(),t instanceof HTMLElement&&(t.id==="close-report"||t.id==="report-panel")&&ce(),t instanceof HTMLElement&&t.id==="open-contact-from-refusal"&&(e.preventDefault(),q(),tt()),t instanceof HTMLElement&&(t.id==="close-entity-refusal"||t.id==="entity-refusal-panel")&&q(),t instanceof HTMLElement&&(t.id==="close-contact"||t.id==="contact-panel")&&ue()});document.addEventListener("keydown",e=>{e.key==="Escape"&&(O(),ce(),q(),ue())});window.addEventListener("pageshow",e=>{e.persisted&&de()});de();document.documentElement.dataset.enhanced="true";
+    ${Lt(t,i)}
+  `)}function ue(){g=null,z("");for(let t of["#results","#address-results"]){let e=document.querySelector(t);e&&(e.innerHTML="")}}async function ke(t){ue();let e=ft(await ht());try{let n=await ve(`/api/case?${t.toString()}`);ue(),G(n,t)}catch(n){let s=document.querySelector("#results");s&&(s.innerHTML=`<section class="error" role="alert">${a(n instanceof Error?n.message:"The case could not be loaded.")}</section>`)}finally{e();let n=document.querySelector("#progress");n&&(n.innerHTML="")}}async function kt(t){if(!wt(t))return;let e=new URLSearchParams,n=Y(t,"pin");if(pt(e,t),n){e.set("pin",n),await ke(e);return}let s=document.querySelector("#results");s&&(s.innerHTML='<section class="error" role="alert">Enter a PIN.</section>')}function Ct(t,e){for(let n of Array.from(t.elements)){if(!(n instanceof HTMLInputElement||n instanceof HTMLSelectElement||n instanceof HTMLTextAreaElement)||!n.name)continue;let s=e.get(n.name);if(n instanceof HTMLInputElement&&n.type==="radio"){n.checked=s===n.value;continue}n.value=s??""}N(t)}function Ce(){let t=$e();if(!t)return;let e=ee(t);if(!e)return;let n=document.querySelector("#case-form");n&&Ct(n,e.query),G(e.payload,e.query)}function $e(){try{return window.sessionStorage}catch{return null}}async function $t(t){if(!I){L("Problem reporting is disabled until the Turnstile site key is configured.",!0);return}if(!t.reportValidity())return;let e=new FormData(t),n=e.get("cf-turnstile-response");L("Submitting report...");let s=await fetch("/api/report",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({category:e.get("category"),description:e.get("description"),context:e.get("context"),turnstileToken:typeof n=="string"?n:""})}),o=await s.json();if(!s.ok||!o.ok){L(o.ok?"The report could not be submitted.":o.error?.message??"The report could not be submitted.",!0);return}L(`Report submitted: ${o.issueUrl}`),t.reset()}async function Et(t){if(!M){k("Contact is disabled until the Turnstile site key is configured.",!0);return}if(!t.reportValidity())return;let e=new FormData(t),n=e.get("topic"),s=e.get("cf-turnstile-response");k("Sending message...");let o=await fetch("/api/contact",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({topic:e.get("topic"),name:e.get("name"),email:e.get("email"),message:e.get("message"),turnstileToken:typeof s=="string"?s:""})}),r=await o.json();if(!o.ok||!r.ok){k(r.ok?"The message could not be sent.":r.error?.message??"The message could not be sent.",!0);return}k(r.message??"Message sent."),t.reset();let i=t.querySelector("#contact-topic");i&&typeof n=="string"&&(i.value=n)}function Pt(t){if(!g||!v)return;let e=D(t);e===null?v.delete("maxSimilarity"):v.set("maxSimilarity",H(e)),G(g,v)}function Rt(t){if(!v||!t.reportValidity())return;let e=new URLSearchParams(v);for(let n of Array.from(t.elements)){if(!(n instanceof HTMLInputElement)||!n.name)continue;let s=n.value.trim();s&&e.set(n.name,s)}ke(e)}function X(t=null){for(let e of Array.from(document.querySelectorAll(".tooltip-toggle"))){if(e===t)continue;let n=e.getAttribute("aria-describedby"),s=n?document.getElementById(n):null;e.setAttribute("aria-expanded","false"),s&&s.removeAttribute("style")}}function It(t,e){e.removeAttribute("style");let n=t.getBoundingClientRect(),s=16,o=Math.min(304,window.innerWidth-s*2);e.style.position="fixed",e.style.width=`${o}px`,e.style.transform="none";let r=e.offsetHeight,i=n.top-r-8,l=n.bottom+8,b=i>=s?i:Math.min(l,window.innerHeight-r-s),y=n.left+n.width/2-o/2,F=Math.max(s,Math.min(y,window.innerWidth-o-s));e.style.position="fixed",e.style.inset=`${Math.max(s,b)}px auto auto ${F}px`}function Mt(t){let e=t.getAttribute("aria-describedby"),n=e?document.getElementById(e):null;if(!n)return;let s=t.getAttribute("aria-expanded")!=="true";X(s?t:null),t.setAttribute("aria-expanded",String(s)),s?It(t,n):n.removeAttribute("style")}function qt(){if(!g)return;let t=re(g,q),e=new ArrayBuffer(t.byteLength);new Uint8Array(e).set(t);let n=new Blob([e],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),s=URL.createObjectURL(n),o=document.createElement("a");o.href=s,o.download=oe(g),document.body.appendChild(o),o.click(),o.remove(),URL.revokeObjectURL(s)}V?bt():gt();var pe=document.querySelector("#case-form");pe&&N(pe);document.addEventListener("submit",t=>{let e=t.target;e instanceof HTMLFormElement&&e.id==="case-form"&&(t.preventDefault(),kt(e)),e instanceof HTMLFormElement&&e.id==="report-form"&&(t.preventDefault(),$t(e)),e instanceof HTMLFormElement&&e.id==="contact-form"&&(t.preventDefault(),Et(e)),e instanceof HTMLFormElement&&e.id==="missing-evidence-form"&&(t.preventDefault(),Rt(e))});document.addEventListener("change",t=>{let e=t.target;if(e instanceof HTMLInputElement||e instanceof HTMLSelectElement||e instanceof HTMLTextAreaElement){let n=e.form;n?.id==="case-form"&&(z(""),N(n)),e instanceof HTMLSelectElement&&e.id==="similarity-filter"&&Pt(e.value)}});document.addEventListener("click",t=>{let e=t.target;if(e instanceof HTMLElement){let n=e.closest(".tooltip-toggle");if(n){Mt(n);return}X()}e instanceof HTMLElement&&e.id==="download-comps"&&qt(),e instanceof HTMLElement&&e.id==="report-problem"&&vt(),e instanceof HTMLElement&&(e.id==="close-report"||e.id==="report-panel")&&xe(),e instanceof HTMLElement&&e.id==="open-contact-from-refusal"&&(t.preventDefault(),W(),B("commercial_interest")),e instanceof HTMLElement&&e.id==="open-commercial-interest"&&(t.preventDefault(),B("commercial_interest")),e instanceof HTMLElement&&e.id==="suggest-feature"&&B("feature_suggestion"),e instanceof HTMLElement&&(e.id==="close-entity-refusal"||e.id==="entity-refusal-panel")&&W(),e instanceof HTMLElement&&(e.id==="close-contact"||e.id==="contact-panel")&&Le()});document.addEventListener("keydown",t=>{t.key==="Escape"&&(X(),xe(),W(),Le())});window.addEventListener("pageshow",t=>{t.persisted&&!V&&Ce()});V||Ce();document.documentElement.dataset.enhanced="true";

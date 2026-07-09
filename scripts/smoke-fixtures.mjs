@@ -1,7 +1,6 @@
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://127.0.0.1:8787";
-const requiredStepOne = "ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no";
-const ptabStepOne =
-  "ownershipType=individual&assessorAppealFiled=yes&assessorDecisionReceived=yes&borAppealFiled=yes&borDecisionReceived=yes";
+const requiredStepOne = "ownershipType=individual";
+const ptabStepOne = "ownershipType=individual&borNoticeReceived=yes";
 
 const checks = [
   {
@@ -12,22 +11,22 @@ const checks = [
   {
     label: "bor sample",
     path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=bor&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"venue\":\"bor\"", "\"BOR Rules Checklist\""],
+    expect: ["\"venue\":\"bor\"", "\"What's Next?\""],
   },
   {
     label: "ptab sample",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&${ptabStepOne}&borDecisionDate=2026-05-20`,
-    expect: ["\"venue\":\"ptab\"", "\"PTAB Checklist\""],
+    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&${ptabStepOne}&borNoticeDate=2026-05-20`,
+    expect: ["\"venue\":\"ptab\"", "\"What's Next?\""],
   },
   {
-    label: "ptab needs input",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&${ptabStepOne}`,
-    expect: ["\"actionStatus\":\"needs_input\"", "refuses to guess"],
+    label: "ptab awaiting notice",
+    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&ownershipType=individual&borNoticeReceived=no`,
+    expect: ["\"actionStatus\":\"upcoming\"", "Waiting for BOR written notice"],
   },
   {
     label: "ptab expired",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-07-06&${ptabStepOne}&borDecisionDate=2026-05-20`,
-    expect: ["\"actionStatus\":\"expired\"", "Deadline was 2026-06-19"],
+    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-07-06&${ptabStepOne}&borNoticeDate=2026-05-20`,
+    expect: ["\"actionStatus\":\"expired\"", "2026-06-22"],
   },
   {
     label: "condo missing data",
@@ -37,22 +36,22 @@ const checks = [
   {
     label: "missing sqft",
     path: `/api/case?demo=1&pin=03-00-000-000-0030&venue=bor&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"status\":\"insufficient_data\"", "Actual sqft field"],
+    expect: ["\"status\":\"insufficient_data\"", "Documented building sqft"],
   },
   {
-    label: "unknown township closed",
+    label: "bor schedule not published",
     path: `/api/case?demo=1&pin=03-00-000-000-0040&venue=bor&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"venue\":\"bor\"", "BOR window is not currently open"],
+    expect: ["\"venue\":\"bor\"", "2026 BOR dates not published yet"],
   },
   {
     label: "print ptab",
-    path: `/print?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&${ptabStepOne}&borDecisionDate=2026-05-20`,
+    path: `/print?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&${ptabStepOne}&borNoticeDate=2026-05-20`,
     expect: ["Selected venue", "Illinois PTAB", "Comparable method"],
   },
   {
     label: "print assessor comps",
     path: `/print?demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&${requiredStepOne}`,
-    expect: ["Year built", "Assessment $/sqft", "Comparable analysis results"],
+    expect: ["Year built", "Improvement AV/sqft", "Comparable analysis results"],
   },
 ];
 

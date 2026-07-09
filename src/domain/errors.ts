@@ -2,6 +2,18 @@ export class AppealToolError extends Error {}
 
 export class UserInputError extends AppealToolError {}
 
+export class UnsupportedPropertyError extends UserInputError {
+  constructor(
+    message: string,
+    readonly pinFormatted: string,
+    readonly propertyClass: string,
+    readonly category: string,
+  ) {
+    super(message);
+    this.name = "UnsupportedPropertyError";
+  }
+}
+
 export enum DataErrorKind {
   UnknownDataset = "unknown_dataset",
   TransientHttp = "transient_http",

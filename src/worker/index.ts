@@ -1,5 +1,6 @@
-import { NotFoundError, UserInputError } from "../domain/errors";
+import { NotFoundError, UnsupportedPropertyError, UserInputError } from "../domain/errors";
 import { GITHUB_ISSUES_REPOSITORY } from "../domain/publicConfig";
+import { parseSimilarityMax } from "../domain/similarityBands";
 import { appShell } from "./appShell";
 import { CloudflareCacheStore, sharedMemoryCache } from "./cache";
 import { buildCasePayload } from "./casePayload";
@@ -190,16 +191,19 @@ function validOptionalEmail(email: string): boolean {
 
 async function sendContactEmail(input: {
   token: string;
+  topic: string;
   name: string;
   email: string;
   message: string;
 }): Promise<boolean> {
+  const topicLabel =
+    input.topic === "feature_suggestion" ? "feature suggestion" : "commercial-property inquiry";
   const body: Record<string, unknown> = {
     from: "Appeal Compass <onboarding@resend.dev>",
     to: [CONTACT_RECIPIENT],
-    subject: "Appeal Compass commercial-property inquiry",
+    subject: `Appeal Compass ${topicLabel}`,
     text: [
-      "Submitted through the Appeal Compass commercial-interest contact form.",
+      `Submitted through the Appeal Compass ${topicLabel} form.`,
       "",
       `Name: ${input.name || "Not provided"}`,
       `Email: ${input.email || "Not provided"}`,
@@ -252,6 +256,21 @@ function errorResponse(error: unknown): Response {
         },
       },
       503,
+    );
+  }
+  if (error instanceof UnsupportedPropertyError) {
+    return json(
+      {
+        ok: false,
+        error: {
+          kind: "unsupported_property",
+          message: error.message,
+          pinFormatted: error.pinFormatted,
+          propertyClass: error.propertyClass,
+          category: error.category,
+        },
+      },
+      422,
     );
   }
   if (error instanceof UserInputError) {
@@ -394,6 +413,7 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
   const name = sanitizeText(payload.name, 120);
   const email = sanitizeText(payload.email, 254);
   const message = sanitizeText(payload.message, 4000);
+  const topic = sanitizeText(payload.topic, 80);
   const turnstileToken = sanitizeText(payload.turnstileToken, 2048);
   if (!message) {
     return json({ ok: false, error: { kind: "input", message: "Write a message." } }, 400);
@@ -424,6 +444,7 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
 
   const sent = await sendContactEmail({
     token: env.RESEND_API_KEY,
+    topic,
     name,
     email,
     message,
@@ -513,9 +534,12 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
           }
           const { repo, demo } = repositoryFactory(url, env);
           const payload = await buildQueuedCasePayload(repo, url.searchParams, demo);
-          return new Response(buildPrintReport(payload), {
-            headers: { "content-type": "text/html;charset=utf-8" },
-          });
+          return new Response(
+            buildPrintReport(payload, parseSimilarityMax(url.searchParams.get("maxSimilarity"))),
+            {
+              headers: { "content-type": "text/html;charset=utf-8" },
+            },
+          );
         } catch (error) {
           return errorResponse(error);
         }
@@ -528,7 +552,11 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
         );
       }
 
-      if (url.pathname === "/" || url.pathname === "/index.html") {
+      if (
+        url.pathname === "/" ||
+        url.pathname === "/index.html" ||
+        url.pathname === "/methodology"
+      ) {
         return new Response(appShell(), {
           headers: { "content-type": "text/html;charset=utf-8" },
         });

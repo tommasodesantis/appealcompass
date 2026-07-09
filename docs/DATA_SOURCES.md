@@ -5,7 +5,7 @@ All live county data is fetched server-side. The browser never receives the Socr
 | Source | Dataset ID | Fields used |
 | --- | --- | --- |
 | Parcel universe | `nj4t-kc8j` | `pin`, `class`, `township_name`, `township_code`, `nbhd_code`, `tax_code`, `lat`, `lon`, `year`, `zip_code` |
-| Assessed values | `uzyt-m557` | `pin`, `year`, `mailed_tot`, `certified_tot`, `board_tot`, `mailed_bldg`, `certified_bldg`, `board_bldg` |
+| Assessed values | `uzyt-m557` | `pin`, `year`, `mailed_tot`, `certified_tot`, `board_tot`, `mailed_bldg`, `certified_bldg`, `board_bldg`, `mailed_land`, `certified_land`, `board_land` |
 | Residential characteristics | `x54s-btds` | `pin`, `class`, `township_code`, `year`, building/land sqft, year built, construction/style inputs, beds, baths, amenities |
 | Parcel sales | `wvhk-k5uv` | `pin`, `sale_date`, `sale_price` for subject value evidence and latest comparable-sale display |
 | Clerk tax-code rates | manual Clerk XLSX | Tax code and composite `CodeRate24` from the Cook County Clerk 2024 Tax Code Agency Rate file, retrieved 2026-07-08 from `https://www.cookcountyclerkil.gov/sites/default/files/2026-04/2024-tax-code-agency-rate-file.xlsx` |
@@ -23,19 +23,25 @@ Tax Rate Report extract.
 - Live address search is disabled because the current public parcel-universe dataset does not
   expose a reliable address field. Users should recover their PIN from the official Cook County
   Property Tax Portal.
+- The parcel-universe class is checked before characteristics or comparable queries. The current
+  product supports eligible Class 2 dwellings and Class 299 condominiums; commercial, industrial,
+  Class 3 multi-family, special/non-dwelling Class 2, and unknown classes stop before analysis.
 - Configured-year assessed-value rows can exist without AV fields. The app falls back to the latest
   value-bearing row and warns the user.
 - Comparable tables show the most recent usable sale returned by `wvhk-k5uv` for each comparable
   when available. Nominal or missing sale prices are ignored; rows without usable sale data render
   "Not available."
+- Comparable tables show the full selected pool after the active similarity filter, including homes
+  assessed above the subject. Each row states whether its Improvement AV/sqft is lower or higher
+  than the subject.
 - Parcel-specific estimated savings use the Clerk tax-code rate when the parcel tax code is present
   and found in the committed lookup. The committed lookup is labeled approximate. Otherwise the app
   falls back to the default 10% county assumption and labels that assumption.
 - Condo pools can be sparse. The app uses the measured missing-data bands described in
   [LEARNINGS.md](LEARNINGS.md).
 - PTAB full-grid evidence is not feasible from public data alone. The results view includes
-  property-record-card user-supply language; the print packet is limited to subject specifications,
-  comparable method, comparable rows, and analysis results.
+  property-record-card fallback guidance. The print packet includes subject specifications,
+  deadline status, consolidated data notes, comparable method, selected rows, and analysis results.
 
 ## Operational Guardrails
 

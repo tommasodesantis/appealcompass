@@ -5,6 +5,8 @@ export type EvidenceTier = "STRONG" | "MODERATE" | "LIMITED";
 export type ActionStatus = "open" | "upcoming" | "closed" | "urgent" | "expired" | "needs_input";
 export type ComparableStatus = "ok" | "condo" | "insufficient_data";
 export type ArgumentStrength = "strong" | "supporting";
+export type DeadlineState = "published" | "not_published" | "awaiting_notice" | "expired";
+export type NoticeSeverity = "caution" | "info";
 
 export interface Parcel {
   pin: string;
@@ -26,8 +28,10 @@ export interface Parcel {
   fullBaths: number | null;
   lat: number | null;
   lon: number | null;
+  assessmentYear: number | null;
   currentAv: number | null;
   currentImprovementAv: number | null;
+  currentLandAv: number | null;
   priorFinalAv: number | null;
 }
 
@@ -43,6 +47,7 @@ export interface Comparable {
   assessmentYear: number | null;
   av: number | null;
   improvementAv: number | null;
+  landAv: number | null;
   landSqft: number | null;
   style: string | null;
   amenityCount: number;
@@ -76,9 +81,19 @@ export interface UserEvidence {
   borAppealFiled: boolean | null;
   borDecisionReceived: boolean | null;
   borDecisionDate: string | null;
+  borNoticeReceived: boolean | null;
+  borNoticeDate: string | null;
   actualSqft: number | null;
   actualAv: number | null;
   actualImprovementAv: number | null;
+}
+
+export interface DataNotice {
+  code: string;
+  severity: NoticeSeverity;
+  title: string;
+  summary: string;
+  details: string[];
 }
 
 export interface CaseFile {
@@ -97,12 +112,21 @@ export interface ComparableExhibit {
   similarity: number;
 }
 
+export type MissingComparableFieldName = "actualSqft" | "actualImprovementAv";
+
+export interface MissingComparableField {
+  name: MissingComparableFieldName;
+  label: string;
+  helpText: string;
+}
+
 export interface ComparableAnalysis {
   status: ComparableStatus;
   note: string;
   profileKey: string;
   profileLabel: string;
   metricLabel: string;
+  missingFields: MissingComparableField[];
   warnings: string[];
   missingDataRate: number | null;
   scope: string | null;
@@ -113,6 +137,18 @@ export interface ComparableAnalysis {
   gapPct: number | null;
   pool: ComparableExhibit[];
   exhibit: ComparableExhibit[];
+}
+
+export interface LandAssessmentCheck {
+  status: "ok" | "insufficient_data";
+  note: string;
+  subjectLandAvPerSqft: number | null;
+  medianLandAvPerSqft: number | null;
+  percentile: number | null;
+  gapPct: number | null;
+  medianComparableLandSqft: number | null;
+  poolSize: number;
+  flagged: boolean;
 }
 
 export interface EvidenceArgument {
@@ -136,6 +172,7 @@ export interface EvidenceSummary {
   tier: EvidenceTier;
   tierMessage: string;
   comparableAnalysis: ComparableAnalysis;
+  landAssessment: LandAssessmentCheck;
   arguments: EvidenceArgument[];
   impliedMarketValue: number | null;
   savingsAssumptions: SavingsAssumption;
@@ -149,8 +186,18 @@ export interface RouteResult {
   actionStatus: ActionStatus;
   deadline: string | null;
   daysRemaining: number | null;
+  deadlineState: DeadlineState;
+  deadlineLabel: string;
+  deadlines: DeadlineItem[];
   warnings: string[];
   officialUrl: string | null;
+}
+
+export interface DeadlineItem {
+  kind: "opens" | "filing" | "evidence" | "ptab";
+  label: string;
+  date: string;
+  daysRemaining: number | null;
 }
 
 export interface PacketSection {
@@ -170,6 +217,8 @@ export function defaultUserEvidence(overrides: Partial<UserEvidence> = {}): User
     borAppealFiled: null,
     borDecisionReceived: null,
     borDecisionDate: null,
+    borNoticeReceived: null,
+    borNoticeDate: null,
     actualSqft: null,
     actualAv: null,
     actualImprovementAv: null,
@@ -185,5 +234,5 @@ export function withUserEvidence(caseFile: CaseFile, userEvidence: UserEvidence)
 }
 
 export function isCondo(parcel: Parcel): boolean {
-  return parcel.propertyClass.trim() === "299" || parcel.propertyClass.trim() === "399";
+  return parcel.propertyClass.trim() === "299";
 }

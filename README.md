@@ -17,7 +17,8 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
 ## What It Does
 
 - Looks up a residential parcel by PIN.
-- Screens public data for uniformity, sale/appraisal, factual-error, and assessment-shock evidence.
+- Screens public data for Improvement AV/sqft uniformity, sale/appraisal, factual-error,
+  land-component, and assessment-shock evidence.
 - Notes other possible appeal factors the homeowner may document directly, such as condition,
   vacancy, demolition, and exemption-related statuses.
 - Lets the homeowner explicitly choose Cook County Assessor, Cook County Board of Review, or
@@ -26,14 +27,20 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
   estimated savings assumptions, and a venue-specific checklist.
 - Uses an approximate parcel-specific Cook County Clerk tax-code rate when available, otherwise
   labels the 10% county default assumption used for rough savings estimates.
-- Shows comparable PINs, distance, neighborhood, class, building facts, latest usable sale, selected
-  assessment metric, assessment dollars per square foot, and similarity score.
+- Shows comparable PINs, distance, neighborhood, class, building facts, latest usable sale,
+  Improvement AV/sqft, and similarity score.
+- Lets users filter displayed comparable evidence by similarity-score strictness while preserving
+  the full similar-home pool in the workbook.
+- Runs a separate Land AV/land sqft check so lot-size effects and possible land/factual-error
+  issues are not confused with building uniformity evidence.
+- Requests user-supplied values only after review, and only for missing public fields needed for
+  comparable analysis.
 - Produces a concise printable comparable-analysis packet at `/print`.
-- Downloads the lower-assessed comparable exhibit, full selected similar-home pool, and savings
-  assumptions as a `.xlsx` workbook.
+- Downloads the similarity-filtered selected pool, full selected similar-home pool, and savings
+  assumptions as a `.xlsx` workbook. Higher-assessed rows remain visible for transparency.
 - Restores the last successful in-tab assessment from `sessionStorage` when a user returns from the
   print page.
-- Provides Turnstile-protected problem-reporting and commercial-interest contact forms when
+- Provides Turnstile-protected problem-reporting, feature-suggestion, and commercial-interest forms when
   deployment secrets are configured.
 
 ## What It Does Not Do
@@ -42,10 +49,13 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
 - It does not file an appeal for you.
 - It does not represent LLCs, corporations, condo associations, or other entities. Those filers
   generally need an attorney.
-- It does not guess missing deadlines or facts. PTAB deadlines require a user-supplied BOR decision
-  date.
+- It does not guess missing deadlines or facts. PTAB dates require the date on the written BOR
+  decision notice and explain that the later Cook County township-transmission date may control.
 - It does not promise savings. Estimated savings are rough ranges using the configured equalizer and
   tax-rate assumptions, including the shown Clerk tax-code rate or fallback default.
+- It does not currently determine whether a homeowner qualifies for an exemption. A future
+  questionnaire may help owners understand whether they might qualify for an exemption, but official
+  eligibility must still be verified with the venue.
 
 ## Appeal Ladder
 
@@ -54,8 +64,9 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
    missed exemptions are surfaced.
 2. Board of Review appeal: second-level appeal under the BOR township calendar and official rules.
 3. Illinois Property Tax Appeal Board: state-level appeal after a BOR decision. PTAB filing is due
-   within 30 days of the written BOR decision notice; this app computes that date only from a BOR
-   decision date entered by the user.
+   within 30 days of the written BOR decision notice or the later Cook County township-transmission
+   date. The app shows a conservative notice-based date and shifts a weekend or Illinois
+   legal-holiday expiration to the next business day.
 
 Every deadline shown by the app links users back to the official venue source and tells them to
 verify before filing.
@@ -82,8 +93,7 @@ secret keys in committed files, browser code, logs, or reports.
 
 Public deployment constants live in `src/domain/publicConfig.ts`:
 
-- `TURNSTILE_SITE_KEY`: public Turnstile site key. When empty, the report and contact forms are
-  disabled.
+- `TURNSTILE_SITE_KEY`: public Turnstile site key used by the report and contact widgets.
 
 Run locally:
 
@@ -97,10 +107,11 @@ Useful endpoints:
 
 - `GET /api/health`
 - `GET /api/queue`
-- `GET /api/case?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
+- `GET /api/case?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual`
 - `POST /api/report`
 - `POST /api/contact`
-- `GET /print?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no`
+- `GET /print?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual`
+- `GET /methodology`
 
 Street-address lookup and example-property browsing are not public features. Users should recover
 their PIN from the Cook County Property Tax Portal and enter it directly.

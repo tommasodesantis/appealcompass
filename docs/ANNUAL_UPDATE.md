@@ -64,8 +64,7 @@ Refresh these constants before each assessment session and before presenting the
 
 ## 6. Verify Reporting And Exports
 
-- Confirm `TURNSTILE_SITE_KEY` remains empty in the public repo unless intentionally enabling
-  Turnstile for deployment.
+- Confirm `TURNSTILE_SITE_KEY` matches the intended public deployment widget.
 - Confirm `TURNSTILE_SECRET_KEY`, `GITHUB_ISSUES_TOKEN`, and `RESEND_API_KEY` are configured only as
   secrets.
 - Re-run report endpoint tests for Turnstile pass/fail and GitHub success/failure, and contact
@@ -76,9 +75,10 @@ Refresh these constants before each assessment session and before presenting the
 ## 7. Verify User-Facing Honesty
 
 - Confirm calendar staleness warnings fire after the configured session end.
-- Confirm PTAB still refuses to compute a deadline without a user-entered BOR decision date.
+- Confirm PTAB requires the written BOR decision-notice date, shifts weekend and Illinois
+  legal-holiday expirations, and explains the later Cook County township-transmission rule.
 - Confirm every deadline includes a verify-at-source link.
-- Confirm every user-supplied value is labeled as user-supplied with documentation required.
+- Confirm every user-supplied value is labeled as user-supplied.
 - Confirm estimated savings show the equalizer and tax-rate assumptions.
 
 ## 8. Final Checks

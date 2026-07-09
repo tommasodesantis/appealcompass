@@ -38,6 +38,22 @@ export function addDays(day: string, days: number): string {
   return isoDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
 }
 
+export function dayOfWeek(day: string): number {
+  const parsed = parts(day);
+  return new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay();
+}
+
+export function nextBusinessDay(
+  day: string,
+  holidays: ReadonlySet<string> = new Set<string>(),
+): string {
+  let candidate = day;
+  while (dayOfWeek(candidate) === 0 || dayOfWeek(candidate) === 6 || holidays.has(candidate)) {
+    candidate = addDays(candidate, 1);
+  }
+  return candidate;
+}
+
 export function addYears(day: string, years: number): string {
   const parsed = parts(day);
   if (parsed.month === 2 && parsed.day === 29) {

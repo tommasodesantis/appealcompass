@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
+import { UnsupportedPropertyError } from "../domain/errors";
 import worker from "./index";
 import { createWorker } from "./index";
 import { ConcurrencyLimiter } from "./limiter";
 import { QUEUED_MESSAGE } from "./messages";
 
-const REQUIRED_STEP_ONE = "ownershipType=individual&assessorAppealFiled=no&borAppealFiled=no";
+const REQUIRED_STEP_ONE = "ownershipType=individual";
 const REQUIRED_CASE_QUERY = `venue=assessor&${REQUIRED_STEP_ONE}`;
 
 test("health endpoint returns a JSON status", async () => {
@@ -15,13 +17,17 @@ test("health endpoint returns a JSON status", async () => {
   });
 });
 
-test("app shell never renders analytics and omits Turnstile while public token is empty", async () => {
+test("app shell includes configured Turnstile", async () => {
   const response = await worker.fetch(new Request("http://example.test/"), {});
   expect(response.status).toBe(200);
   const html = await response.text();
   expect(html).toContain("Appeal Compass");
-  expect(html).not.toContain("static.cloudflareinsights.com/beacon.min.js");
-  expect(html).not.toContain("challenges.cloudflare.com/turnstile/v0/api.js");
+  expect(html).toContain("challenges.cloudflare.com/turnstile/v0/api.js");
+});
+
+test("static asset shell loads Turnstile", () => {
+  const html = readFileSync(new URL("../../public/index.html", import.meta.url), "utf8");
+  expect(html).toContain("challenges.cloudflare.com/turnstile/v0/api.js");
 });
 
 test("fixture-mode case endpoint returns a computed case payload", async () => {
@@ -68,10 +74,10 @@ test("fixture-mode case endpoint labels the default tax-rate fallback", async ()
 
 test.each([
   ["03-00-000-000-0001", "assessor", "2026-05-01", "assessor", "open"],
-  ["03-00-000-000-0001", "bor", "2025-07-10", "bor", "open"],
+  ["03-00-000-000-0001", "bor", "2026-07-10", "bor", "upcoming"],
   ["03-00-000-000-0020", "assessor", "2026-05-01", "assessor", "open"],
-  ["03-00-000-000-0030", "bor", "2025-07-10", "bor", "open"],
-  ["03-00-000-000-0040", "bor", "2025-07-10", "bor", "closed"],
+  ["03-00-000-000-0030", "bor", "2026-07-10", "bor", "upcoming"],
+  ["03-00-000-000-0040", "bor", "2026-07-10", "bor", "upcoming"],
 ])(
   "fixture endpoint handles %s at %s without crashing",
   async (pin, venue, today, expectedVenue, expectedStatus) => {
@@ -89,27 +95,31 @@ test.each([
   },
 );
 
-test("fixture endpoint surfaces PTAB needs-input and expired states", async () => {
-  const needsInput = await worker.fetch(
+test("fixture endpoint surfaces PTAB awaiting-notice and expired states", async () => {
+  const awaitingNotice = await worker.fetch(
     new Request(
-      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&ownershipType=individual&assessorAppealFiled=yes&assessorDecisionReceived=yes&borAppealFiled=yes&borDecisionReceived=yes",
+      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&ownershipType=individual&borNoticeReceived=no",
     ),
     {},
   );
-  expect(needsInput.status).toBe(200);
-  await expect(needsInput.json()).resolves.toMatchObject({
-    routing: { venue: "ptab", actionStatus: "needs_input" },
+  expect(awaitingNotice.status).toBe(200);
+  await expect(awaitingNotice.json()).resolves.toMatchObject({
+    routing: {
+      venue: "ptab",
+      actionStatus: "upcoming",
+      deadlineState: "awaiting_notice",
+    },
   });
 
   const expired = await worker.fetch(
     new Request(
-      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-07-06&ownershipType=individual&assessorAppealFiled=yes&assessorDecisionReceived=yes&borAppealFiled=yes&borDecisionReceived=yes&borDecisionDate=2026-05-20",
+      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-07-06&ownershipType=individual&borNoticeReceived=yes&borNoticeDate=2026-05-20",
     ),
     {},
   );
   expect(expired.status).toBe(200);
   await expect(expired.json()).resolves.toMatchObject({
-    routing: { venue: "ptab", actionStatus: "expired", deadline: "2026-06-19" },
+    routing: { venue: "ptab", actionStatus: "expired", deadline: "2026-06-22" },
   });
 });
 
@@ -123,6 +133,35 @@ test("case endpoint returns user-facing errors", async () => {
     ok: false,
     error: {
       kind: "input",
+    },
+  });
+});
+
+test("case endpoint returns a structured unsupported-property response", async () => {
+  const testWorker = createWorker({
+    caseBuilder: async () => {
+      throw new UnsupportedPropertyError(
+        "Residential dwellings only.",
+        "17-19-411-044-0000",
+        "318",
+        "multi-family property",
+      );
+    },
+  });
+  const response = await testWorker.fetch(
+    new Request(
+      `http://example.test/api/case?demo=1&pin=17-19-411-044-0000&${REQUIRED_CASE_QUERY}`,
+    ),
+    {},
+  );
+  expect(response.status).toBe(422);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: {
+      kind: "unsupported_property",
+      pinFormatted: "17-19-411-044-0000",
+      propertyClass: "318",
+      category: "multi-family property",
     },
   });
 });
@@ -145,7 +184,7 @@ test("case endpoint requires an explicit venue", async () => {
 test("case endpoint refuses entity-owned properties before assessment", async () => {
   const response = await worker.fetch(
     new Request(
-      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=assessor&ownershipType=llc&assessorAppealFiled=no&borAppealFiled=no",
+      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=assessor&ownershipType=llc",
     ),
     {},
   );
@@ -317,6 +356,41 @@ test("contact endpoint verifies Turnstile and sends sanitized Resend email", asy
         name: "<b>Commercial Owner</b>",
         email: "owner@example.com",
         message: "<b>Need a commercial appeal tool</b>",
+        turnstileToken: "contact-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", RESEND_API_KEY: "resend-secret" },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      message: "Message sent.",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("contact endpoint sends feature-suggestion topic to Resend", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("turnstile")) {
+      return Response.json({ success: true });
+    }
+    if (url.includes("api.resend.com")) {
+      const body = String(init?.body ?? "");
+      expect(body).toContain("Appeal Compass feature suggestion");
+      expect(body).toContain("Please add a deadline reminder");
+      return Response.json({ id: "email_456" }, { status: 200 });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      contactRequest("10.0.1.5", {
+        topic: "feature_suggestion",
+        message: "Please add a deadline reminder",
         turnstileToken: "contact-token",
       }),
       { TURNSTILE_SECRET_KEY: "turnstile-secret", RESEND_API_KEY: "resend-secret" },

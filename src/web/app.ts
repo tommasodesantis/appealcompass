@@ -1,13 +1,18 @@
 import { assessmentTypeLabel } from "../domain/comparableDisplay";
 import {
-  BOR_DATES_PDF_URL,
-  BOR_GROUPS,
+  BOR_DATES_URL,
   CCAO_OFFICIAL_URL,
   CCAO_WINDOWS,
   type FilingWindow,
   PTAB_OFFICIAL_URL,
 } from "../domain/config";
 import { TURNSTILE_SITE_KEY } from "../domain/publicConfig";
+import {
+  SIMILARITY_BANDS,
+  filterBySimilarity,
+  parseSimilarityMax,
+  similarityFilterValue,
+} from "../domain/similarityBands";
 import { loadAssessmentSnapshot, saveAssessmentSnapshot } from "./sessionState";
 import { buildComparableWorkbook, comparableWorkbookFilename } from "./xlsx";
 
@@ -39,8 +44,11 @@ interface CasePayload {
       city: string;
       zipCode: string;
       buildingSqft: number | null;
+      landSqft: number | null;
+      assessmentYear: number | null;
       currentAv: number | null;
       currentImprovementAv: number | null;
+      currentLandAv: number | null;
     };
     userEvidence: {
       actualSqft: number | null;
@@ -48,6 +56,8 @@ interface CasePayload {
       actualImprovementAv: number | null;
       purchasePrice: number | null;
       appraisalValue: number | null;
+      borDecisionDate: string | null;
+      borNoticeDate: string | null;
     };
     dataWarnings: string[];
   };
@@ -58,6 +68,14 @@ interface CasePayload {
     actionStatus: string;
     deadline: string | null;
     daysRemaining: number | null;
+    deadlineState: string;
+    deadlineLabel: string;
+    deadlines: Array<{
+      kind: string;
+      label: string;
+      date: string;
+      daysRemaining: number | null;
+    }>;
     warnings: string[];
     officialUrl: string | null;
   };
@@ -87,6 +105,11 @@ interface CasePayload {
       profileKey: string;
       profileLabel: string;
       metricLabel: string;
+      missingFields: Array<{
+        name: "actualSqft" | "actualImprovementAv";
+        label: string;
+        helpText: string;
+      }>;
       warnings: string[];
       missingDataRate: number | null;
       scope: string | null;
@@ -110,6 +133,8 @@ interface CasePayload {
           assessmentYear: number | null;
           av: number | null;
           improvementAv: number | null;
+          landAv: number | null;
+          landSqft: number | null;
         };
       }>;
       exhibit: Array<{
@@ -127,18 +152,40 @@ interface CasePayload {
           assessmentYear: number | null;
           av: number | null;
           improvementAv: number | null;
+          landAv: number | null;
+          landSqft: number | null;
         };
       }>;
+    };
+    landAssessment: {
+      status: string;
+      note: string;
+      subjectLandAvPerSqft: number | null;
+      medianLandAvPerSqft: number | null;
+      percentile: number | null;
+      gapPct: number | null;
+      medianComparableLandSqft: number | null;
+      poolSize: number;
+      flagged: boolean;
     };
   };
   venue: {
     key: string;
     name: string;
     officialUrl: string;
+    submissionUrl: string;
+    rulesUrl: string;
     checklist: string[];
     sections: Array<{ title: string; lines: string[] }>;
   };
   warnings: string[];
+  notices?: Array<{
+    code: string;
+    severity: "caution" | "info";
+    title: string;
+    summary: string;
+    details: string[];
+  }>;
 }
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -164,6 +211,9 @@ const REPORTING_ENABLED = TURNSTILE_ENABLED;
 const CONTACT_ENABLED = TURNSTILE_ENABLED;
 let tooltipCounter = 0;
 let lastCasePayload: CasePayload | null = null;
+let lastCaseQuery: URLSearchParams | null = null;
+let selectedSimilarityMax: number | null = null;
+const IS_METHODOLOGY_PAGE = window.location.pathname === "/methodology";
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -224,7 +274,7 @@ function numberText(value: number | null, digits = 0): string {
 
 function evidenceLevelLabel(level: string): string {
   if (level === "LIMITED") {
-    return "No evidence found";
+    return "Limited public-data evidence";
   }
   if (level === "STRONG") {
     return "Strong";
@@ -233,6 +283,14 @@ function evidenceLevelLabel(level: string): string {
     return "Moderate";
   }
   return level;
+}
+
+function argumentTypeLabel(argumentType: string): string {
+  return argumentType
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function clientTodayIso(): string {
@@ -283,26 +341,13 @@ function assessorDeadlineList(): string {
   );
 }
 
-function borDeadlineList(): string {
-  return Object.entries(BOR_GROUPS)
-    .map(([group, info]) => {
-      const windows = info.windows.map((window) => filingWindowLabel(window)).join("; ");
-      return `<li>Group ${escapeHtml(group)} (${escapeHtml(info.townships.join(", "))}): ${escapeHtml(windows)}</li>`;
-    })
-    .join("");
-}
-
-function deadlineWarningForVenue(venue: "assessor" | "bor", today: string): string {
-  const windows =
-    venue === "assessor"
-      ? Object.values(CCAO_WINDOWS).flat()
-      : Object.values(BOR_GROUPS).flatMap((group) => group.windows);
+function assessorDeadlineWarning(today: string): string {
+  const windows = Object.values(CCAO_WINDOWS).flat();
   if (!allWindowsClosed(windows, today)) {
     return "";
   }
-  const venueLabel = venue === "assessor" ? "Assessor" : "Board of Review";
   return warningTooltip(
-    `${venueLabel} calendar warning`,
+    "Assessor calendar warning",
     `All configured deadlines for this venue appear to be past as of ${today}. The data may be stale; verify at the official source before filing. You can still select this venue to prepare for the next session.`,
   );
 }
@@ -314,11 +359,13 @@ function venueOptionHtml(input: {
   details: string;
 }): string {
   return `<div class="venue-option">
-    <label class="venue-choice">
-      <input type="radio" name="venue" value="${input.value}" required>
-      <span>${escapeHtml(input.label)}</span>
+    <div class="venue-choice-row">
+      <label class="venue-choice">
+        <input type="radio" name="venue" value="${input.value}" required>
+        <span>${escapeHtml(input.label)}</span>
+      </label>
       ${input.warning ?? ""}
-    </label>
+    </div>
     ${input.details}
   </div>`;
 }
@@ -331,7 +378,7 @@ function venuePickerHtml(): string {
       ${venueOptionHtml({
         value: "assessor",
         label: "Cook County Assessor",
-        warning: deadlineWarningForVenue("assessor", today),
+        warning: assessorDeadlineWarning(today),
         details: `<details class="venue-details">
           <summary>About the Assessor path</summary>
           <p>The Assessor is the first-level Cook County appeal venue. Start here for current-year assessment challenges and documented property-description errors.</p>
@@ -343,13 +390,16 @@ function venuePickerHtml(): string {
       ${venueOptionHtml({
         value: "bor",
         label: "Cook County Board of Review",
-        warning: deadlineWarningForVenue("bor", today),
+        warning: warningTooltip(
+          "Board of Review schedule status",
+          "Tax Year 2026 township filing dates have not been published. The official page still lists the prior 2025 schedule.",
+        ),
         details: `<details class="venue-details">
           <summary>About the BOR path</summary>
           <p>The Board of Review is the second-level Cook County appeal venue and has its own township filing and evidence deadlines.</p>
           <p>Use this path if you are filing at BOR, preparing after an Assessor appeal, or checking BOR-specific comparable evidence.</p>
-          <p>Official source: ${externalLink(BOR_DATES_PDF_URL, "Cook County BOR township dates")}. Verify at the official source before filing.</p>
-          <ul class="deadline-list">${borDeadlineList()}</ul>
+          <p>Tax Year 2026 township dates are not published yet. Do not use the expired 2025 schedule as a current deadline.</p>
+          <p>Official source: ${externalLink(BOR_DATES_URL, "Cook County BOR dates and deadlines")}. Check the official page before filing.</p>
         </details>`,
       })}
       ${venueOptionHtml({
@@ -358,7 +408,7 @@ function venuePickerHtml(): string {
         details: `<details class="venue-details">
           <summary>About the PTAB path</summary>
           <p>PTAB is the Illinois state appeal board available after a written BOR decision for the same tax year.</p>
-          <p>Use this path only when you have, or are preparing for, a BOR decision notice. The deadline is generally 30 days from the written BOR decision date; Appeal Compass will not guess it without that date.</p>
+          <p>Use this path only when you have, or are preparing for, a BOR decision notice. The deadline is generally 30 days from the date on the written notice; Appeal Compass will not guess that date.</p>
           <p>Official source: ${externalLink(PTAB_OFFICIAL_URL, "Illinois PTAB")}. Verify at the official source before filing.</p>
         </details>`,
       })}
@@ -386,11 +436,8 @@ function addOptionalParams(params: URLSearchParams, form: HTMLFormElement): void
     "jurisdiction",
     "venue",
     "ownershipType",
-    "assessorAppealFiled",
-    "assessorDecisionReceived",
-    "borAppealFiled",
-    "borDecisionReceived",
-    "borDecisionDate",
+    "borNoticeReceived",
+    "borNoticeDate",
     "purchasePrice",
     "purchaseDate",
     "appraisalValue",
@@ -419,10 +466,16 @@ function githubLogo(): string {
 
 function siteFooter(): string {
   return `<footer class="site-footer">
-    <p class="project-credit">Appeal Compass is an open-source project developed by <a href="https://github.com/tommasodesantis" target="_blank" rel="noreferrer">Tommaso De Santis<span class="sr-only"> (opens in new tab)</span></a> under GPLv3.</p>
-    <a class="footer-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${githubLogo()}<span>View on GitHub</span><span class="sr-only"> (opens in new tab)</span></a>
-    <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Donations help the project grow and cover hosting and maintenance costs.<span class="sr-only"> (opens in new tab)</span></a>
-    <button type="button" id="report-problem" class="link-button">Report a problem</button>
+    <div class="footer-project">
+      <strong>Appeal Compass</strong>
+      <p class="project-credit">An open-source GPLv3 project developed by <a href="https://github.com/tommasodesantis" target="_blank" rel="noreferrer">Tommaso De Santis<span class="sr-only"> (opens in new tab)</span></a></p>
+    </div>
+    <nav class="footer-links" aria-label="Project links">
+      <a class="footer-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${githubLogo()}<span>GitHub</span><span class="sr-only"> (opens in new tab)</span></a>
+      <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support the project<span class="sr-only"> (opens in new tab)</span></a>
+      <button type="button" id="suggest-feature" class="link-button">Suggest a feature</button>
+      <button type="button" id="report-problem" class="link-button">Report a problem</button>
+    </nav>
   </footer>`;
 }
 
@@ -491,6 +544,7 @@ function contactPanel(): string {
       <button type="button" id="close-contact" class="secondary close-button">Close</button>
       <h2 id="contact-title">Commercial-property interest</h2>
       <form id="contact-form" class="stack">
+        <input type="hidden" name="topic" id="contact-topic" value="commercial_interest">
         <label>
           <span>Name (optional)</span>
           <input name="name" maxlength="120"${disabled}>
@@ -552,15 +606,10 @@ function shell(): void {
         <h1>Appeal Compass</h1>
         ${githubHeaderLink()}
       </div>
-      <details class="tool-description">
-        <summary>What this tool does</summary>
-        <p>Appeal Compass screens public data for residential property-tax appeal evidence. It is open-source and currently runs on donations. <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support it on Ko-fi<span class="sr-only"> (opens in new tab)</span></a>.</p>
-      </details>
-      <p class="lede">Enter a PIN. A PIN is the 14-digit parcel number on your assessment notice, tax bill, or property record card.</p>
+      <p class="tool-description">Appeal Compass screens public data for residential property-tax appeal evidence. It is open-source and currently runs on donations. <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support it on Ko-fi<span class="sr-only"> (opens in new tab)</span></a>. If interested in a similar tool for commercial properties <a href="#contact-panel" id="open-commercial-interest">reach out here</a>.</p>
     </header>
 
     <section class="panel" aria-labelledby="step-one">
-      <div class="step-label">Step 1</div>
       <h2 id="step-one">Find the property</h2>
       <form id="case-form" class="stack">
         <div id="form-error" aria-live="polite"></div>
@@ -572,10 +621,16 @@ function shell(): void {
         </label>
         <p class="hint">More jurisdictions will be added.</p>
         <div class="lookup-grid">
-          <label>
-            <span>PIN</span>
-            <input name="pin" autocomplete="off" inputmode="numeric" placeholder="03-00-000-000-0001" required>
-          </label>
+          <div class="lookup-field">
+            <div class="field-label-row">
+              <label for="pin-input">PIN</label>
+              ${infoTooltip(
+                "What is a PIN?",
+                "A PIN is the 14-digit parcel number on your assessment notice, tax bill, or property record card.",
+              )}
+            </div>
+            <input id="pin-input" name="pin" autocomplete="off" inputmode="numeric" placeholder="03-00-000-000-0001" required>
+          </div>
         </div>
         <p class="hint pin-help">Don't know your PIN? You can recover it from the ${externalLink(COOK_PROPERTY_TAX_PORTAL_URL, "Cook County Property Tax Portal")}.</p>
 
@@ -595,79 +650,20 @@ function shell(): void {
           </label>
         </fieldset>
 
-        <fieldset class="question-group">
-          <legend>Assessor appeal status</legend>
-          <p>Have you already filed an Assessor appeal for this year?</p>
+        <fieldset class="question-group conditional" data-conditional="ptabNotice" hidden>
+          <legend>PTAB timing</legend>
+          <p>Have you received the written Board of Review decision notice?</p>
           <div class="choice-row">
-            <label><input type="radio" name="assessorAppealFiled" value="yes" required><span>Yes</span></label>
-            <label><input type="radio" name="assessorAppealFiled" value="no" required><span>No</span></label>
+            <label><input type="radio" name="borNoticeReceived" value="yes"><span>Yes</span></label>
+            <label><input type="radio" name="borNoticeReceived" value="no"><span>No</span></label>
           </div>
-          <div class="conditional" data-conditional="assessorDecision" hidden>
-            <p>Have you already received the Assessor decision?</p>
-            <div class="choice-row">
-              <label><input type="radio" name="assessorDecisionReceived" value="yes"><span>Yes</span></label>
-              <label><input type="radio" name="assessorDecisionReceived" value="no"><span>No</span></label>
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset class="question-group">
-          <legend>Board of Review appeal status</legend>
-          <p>Have you already filed a Board of Review appeal for this year?</p>
-          <div class="choice-row">
-            <label><input type="radio" name="borAppealFiled" value="yes" required><span>Yes</span></label>
-            <label><input type="radio" name="borAppealFiled" value="no" required><span>No</span></label>
-          </div>
-          <div class="conditional" data-conditional="borDecision" hidden>
-            <p>Have you already received the BOR decision?</p>
-            <div class="choice-row">
-              <label><input type="radio" name="borDecisionReceived" value="yes"><span>Yes</span></label>
-              <label><input type="radio" name="borDecisionReceived" value="no"><span>No</span></label>
-            </div>
-          </div>
-          <div class="conditional" data-conditional="borDecisionDate" hidden>
+          <div class="conditional" data-conditional="ptabNoticeDate" hidden>
             <label>
-              <span>BOR decision date</span>
-              <input name="borDecisionDate" type="date">
+              <span>Date on the written BOR decision notice</span>
+              <input name="borNoticeDate" type="date">
             </label>
           </div>
         </fieldset>
-
-        <details class="evidence">
-          <summary>Add your own evidence</summary>
-          <div class="evidence-grid">
-            <label>
-              <span>Purchase price</span>
-              <input name="purchasePrice" inputmode="decimal" data-evidence-input>
-            </label>
-            <label>
-              <span>Purchase date</span>
-              <input name="purchaseDate" type="date" data-evidence-input>
-            </label>
-            <label>
-              <span>Appraisal value</span>
-              <input name="appraisalValue" inputmode="decimal" data-evidence-input>
-            </label>
-            <label>
-              <span>Appraisal date</span>
-              <input name="appraisalDate" type="date" data-evidence-input>
-            </label>
-            <label>
-              <span>Actual sqft</span>
-              <input name="actualSqft" inputmode="decimal" aria-describedby="actual-help" data-evidence-input>
-            </label>
-            <label>
-              <span>Actual total AV</span>
-              <input name="actualAv" inputmode="decimal" data-evidence-input>
-            </label>
-            <label>
-              <span>Actual improvement AV</span>
-              <input name="actualImprovementAv" inputmode="decimal" data-evidence-input>
-            </label>
-          </div>
-          <p id="actual-help" class="hint">User-supplied values are labeled documentation-required and are used only when official public data is missing.</p>
-          <button type="button" id="clear-evidence" class="secondary">Clear evidence</button>
-        </details>
 
         <div class="actions">
           <button type="submit">Review my case</button>
@@ -680,6 +676,92 @@ function shell(): void {
     ${siteFooter()}
     ${reportPanel()}
     ${entityRefusalPanel()}
+    ${contactPanel()}
+  `;
+}
+
+function methodologyPage(): void {
+  appRoot.innerHTML = `
+    <header class="topline">
+      <div class="topline-head">
+        <h1>Methodology</h1>
+        ${githubHeaderLink()}
+      </div>
+      <p class="lede">How Appeal Compass screens public data for residential property-tax appeal evidence.</p>
+      <p><a href="/">Back to Appeal Compass</a></p>
+    </header>
+
+    <nav class="methodology-nav panel" aria-label="Methodology sections">
+      <a href="#scope">Scope</a>
+      <a href="#data-years">Data and years</a>
+      <a href="#comparables">Comparables</a>
+      <a href="#edge-cases">Edge cases</a>
+      <a href="#deadlines">Deadlines</a>
+      <a href="#savings">Savings</a>
+    </nav>
+
+    <section class="panel stack" id="scope">
+      <p class="eyebrow">01 / Scope</p>
+      <h2>What Appeal Compass does</h2>
+      <p>Appeal Compass is a screening tool for individual Cook County homeowners. It uses a parcel PIN, the selected appeal venue, public property records, assessment values, sales, and residential characteristics to identify evidence worth reviewing.</p>
+      <p>It does not file an appeal, decide legal eligibility, inspect the property, verify every reduction factor, or predict an official result. Every property fact, comparable, value, and deadline must be checked against the official source before filing.</p>
+    </section>
+
+    <section class="panel stack" id="data-years">
+      <p class="eyebrow">02 / Data and years</p>
+      <h2>How public rows are selected</h2>
+      <p>The tool first requests the current assessment-year parcel, characteristic, and assessed-value rows. If a current row exists but has no usable assessed value, it uses the most recent value-bearing year and labels that limitation. Subject and comparable assessment years remain visible in the results and exports.</p>
+      <p>If residential characteristics are missing, the tool may ask for only the field needed to continue, such as building area or Improvement AV. Values entered by a user are fallback inputs and are labeled user-supplied.</p>
+      <p>Data notes combine related limitations, such as missing characteristics and older assessed values, so the same issue is not repeated several times.</p>
+    </section>
+
+    <section class="panel stack" id="comparables">
+      <p class="eyebrow">03 / Comparable evidence</p>
+      <h2>Selection, metrics, and interpretation</h2>
+      <p>Residential uniformity evidence uses Improvement AV per building square foot. Total AV is shown for context, overvaluation checks, value breakdowns, and savings estimates, but Total AV alone does not generate a residential uniformity argument.</p>
+      <p>The candidate pool starts with the same public property class and township. Venue-specific profiles apply building-size and year-built rules, prefer same-neighborhood homes when enough records exist, and compare known assessment years consistently. The selected-comparables table shows the full filtered pool, including rows assessed above the subject; a higher-assessed row is context, not support for a reduction.</p>
+      <p>A lower similarity score means closer observable characteristics. Scores 0.00-0.10 are excellent, 0.10-0.20 are good, 0.20-0.35 are usable, 0.35-0.50 are broad matches that require careful review, and scores above 0.50 are questionable unless alternatives are sparse.</p>
+      <p>The evidence level summarizes the available public-data support. It is a screening label, not a legal conclusion. A pool can contain several homes while producing no reduction argument when the subject is already assessed below the pool median.</p>
+    </section>
+
+    <section class="panel stack" id="edge-cases">
+      <p class="eyebrow">04 / Property edge cases</p>
+      <h2>What is included, limited, or blocked</h2>
+      <dl class="methodology-cases">
+        <div><dt>Residential condominiums</dt><dd>Class 299 is supported and compared with other Class 299 records. Condominium analysis is limited to public parcel-level fields and cannot evaluate unit condition, floor, view, parking, association finances, or other private attributes unless those appear in the source data.</dd></div>
+        <div><dt>Small mixed-use homes</dt><dd>Supported Class 2 dwelling records, including Class 212, may be reviewed, but mixed residential and commercial use can make residential comparables less reliable. The result carries a caveat and should be checked manually.</dd></div>
+        <div><dt>Multi-family and commercial</dt><dd>Class 3 multi-family property, Class 5 commercial or industrial property, and other non-Class-2 major classes are blocked before comparable analysis.</dd></div>
+        <div><dt>Non-dwelling Class 2 records</dt><dd>Vacant land, cooperatives, buildings with more than six units, non-residential improvements, and special or atypical Class 2 codes are blocked. Current excluded codes are 200, 201, 213, 218, 219, 224, 225, 236, 239, 240, 241, 288, 290, 297, and 298.</dd></div>
+        <div><dt>Unknown class</dt><dd>If the parcel class is missing or malformed, the tool stops rather than guessing that the property is a supported home.</dd></div>
+        <div><dt>Missing or sparse comparables</dt><dd>The tool explains which data is missing. It does not create a favorable argument from a small pool or from higher-assessed homes. If selected rows exist, they remain visible for transparent review.</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel stack">
+      <p class="eyebrow">05 / Land and arguments</p>
+      <h2>Separate checks prevent misleading comparisons</h2>
+      <p>The land-component check compares Land AV per land square foot. This helps distinguish lot-size differences from building uniformity evidence. A large lot or unusual land assessment may explain a Total AV difference without supporting a building-assessment reduction.</p>
+      <p>Potential arguments are generated only when their underlying checks pass. These may include uniformity, overvaluation, description error, or assessment shock. “No strong public-data argument” means only that this screen did not find one; condition, vacancy, demolition, exemptions, appraisal evidence, and other facts may still matter.</p>
+    </section>
+
+    <section class="panel stack" id="deadlines">
+      <p class="eyebrow">06 / Deadlines</p>
+      <h2>How dates and unavailable schedules are handled</h2>
+      <p>Assessor dates come from the official Tax Year 2026 township calendar. Townships without published dates are labeled “dates not published yet”; the tool does not invent a date.</p>
+      <p>The official Board of Review dates page currently shows the prior Tax Year 2025 schedule, not a Tax Year 2026 township schedule. Appeal Compass therefore shows “2026 BOR dates not published yet” and links to the ${externalLink(BOR_DATES_URL, "official BOR dates page")} rather than reusing expired dates.</p>
+      <p>PTAB generally requires filing within 30 days after the written BOR decision notice. The notice day is excluded and the last day is included. If the last day is a Saturday, Sunday, or Illinois legal holiday, the date moves to the next business day. For Cook County, a later statutory date tied to the township's final-action transmission may apply; that transmission is not observable in the public inputs, so the displayed date is conservative and must be verified with ${externalLink(PTAB_OFFICIAL_URL, "PTAB")}.</p>
+      <p>Official pages control. Check the ${externalLink(CCAO_OFFICIAL_URL, "Assessor calendar")}, ${externalLink(BOR_DATES_URL, "BOR dates page")}, or ${externalLink(PTAB_OFFICIAL_URL, "PTAB site")} immediately before filing.</p>
+    </section>
+
+    <section class="panel stack" id="savings">
+      <p class="eyebrow">07 / Savings and exports</p>
+      <h2>Rough estimates, not promises</h2>
+      <p>The point estimate applies the possible assessed-value reduction, state equalizer, and displayed tax-rate source. The range is shown around that point estimate. Missing current values or a default county tax-rate assumption reduces confidence.</p>
+      <p>The print report and spreadsheet use the same selected comparable pool and similarity threshold as the screen. User-entered fallback values are labeled user-supplied. Taxes must still be paid on time while an appeal is pending.</p>
+    </section>
+
+    ${siteFooter()}
+    ${reportPanel()}
     ${contactPanel()}
   `;
 }
@@ -758,10 +840,21 @@ function closeEntityRefusalPanel(): void {
   }
 }
 
-function openContactPanel(): void {
+function openContactPanel(
+  topic: "commercial_interest" | "feature_suggestion" = "commercial_interest",
+): void {
   const panel = document.querySelector<HTMLElement>("#contact-panel");
   if (!panel) {
     return;
+  }
+  const title = document.querySelector<HTMLElement>("#contact-title");
+  const topicInput = document.querySelector<HTMLInputElement>("#contact-topic");
+  if (title) {
+    title.textContent =
+      topic === "feature_suggestion" ? "Suggest a feature" : "Commercial-property interest";
+  }
+  if (topicInput) {
+    topicInput.value = topic;
   }
   setContactStatus(
     CONTACT_ENABLED ? "" : "Contact is disabled until the Turnstile site key is configured.",
@@ -800,6 +893,9 @@ function setConditional(form: HTMLFormElement, name: string, show: boolean): voi
     ) {
       continue;
     }
+    if (element.closest<HTMLElement>("[data-conditional]") !== section) {
+      continue;
+    }
     const input = element;
     input.disabled = !show;
     input.required = show;
@@ -814,12 +910,10 @@ function setConditional(form: HTMLFormElement, name: string, show: boolean): voi
 }
 
 function updateConditionalFields(form: HTMLFormElement): void {
-  const assessorFiled = checkedValue(form, "assessorAppealFiled") === "yes";
-  const borFiled = checkedValue(form, "borAppealFiled") === "yes";
-  const borDecisionReceived = checkedValue(form, "borDecisionReceived") === "yes";
-  setConditional(form, "assessorDecision", assessorFiled);
-  setConditional(form, "borDecision", borFiled);
-  setConditional(form, "borDecisionDate", borFiled && borDecisionReceived);
+  const isPtab = checkedValue(form, "venue") === "ptab";
+  setConditional(form, "ptabNotice", isPtab);
+  const noticeReceived = isPtab && checkedValue(form, "borNoticeReceived") === "yes";
+  setConditional(form, "ptabNoticeDate", noticeReceived);
 }
 
 function validateStepOne(form: HTMLFormElement): boolean {
@@ -835,59 +929,164 @@ function validateStepOne(form: HTMLFormElement): boolean {
   return true;
 }
 
-function warningList(warnings: string[]): string {
-  if (warnings.length === 0) {
+function noticeList(payload: CasePayload): string {
+  const notices =
+    payload.notices ??
+    payload.warnings.map((warning, index) => ({
+      code: `legacy_${index}`,
+      severity: "caution" as const,
+      title: "Data limitation",
+      summary: warning,
+      details: [],
+    }));
+  if (notices.length === 0) {
     return "";
   }
-  return `<section class="warnings" aria-label="Warnings"><h2>Warnings</h2><ul>${warnings
-    .map((warning) => `<li>${linkedText(warning)}</li>`)
-    .join("")}</ul></section>`;
-}
-
-function renderExemptionsSection(): string {
-  return `<section class="panel" aria-labelledby="exemptions">
-    <h2 id="exemptions">Exemptions and past-year corrections</h2>
-    <p>Exemptions are fixed reductions in taxable value for owner-occupants, seniors, veterans, people with disabilities, and some other homeowners. They can be worth more than an appeal.</p>
-    <p>Check your exemptions on the ${externalLink(CCAO_EXEMPTIONS_URL, "Cook County Assessor exemptions page")} and the ${externalLink(COOK_PROPERTY_TAX_PORTAL_URL, "Cook County Property Tax Portal")}. Bring documentation for any missing or incorrect exemption.</p>
-    <p>A Certificate of Error is a Cook County process to fix past-year mistakes - like a missed exemption or wrong property facts - which can lead to a refund. Ask the Assessor's office about it.</p>
+  return `<section class="data-notices" aria-labelledby="data-notes-heading">
+    <div class="section-heading-row">
+      <h2 id="data-notes-heading">Data notes</h2>
+      <span class="notice-count">${notices.length}</span>
+    </div>
+    <div class="notice-grid">${notices
+      .map(
+        (notice) => `<article class="data-note ${escapeHtml(notice.severity)}">
+          <h3>${escapeHtml(notice.title)}</h3>
+          <p>${linkedText(notice.summary)}</p>
+          ${
+            notice.details.length > 0
+              ? `<details><summary>Details and next check</summary><ul>${notice.details
+                  .map((detail) => `<li>${linkedText(detail)}</li>`)
+                  .join("")}</ul></details>`
+              : ""
+          }
+        </article>`,
+      )
+      .join("")}</div>
   </section>`;
 }
 
-function renderDeadline(payload: CasePayload): string {
+function renderDeadlineInfo(payload: CasePayload): string {
   const route = payload.routing;
-  const official = route.officialUrl
-    ? `<a href="${escapeHtml(route.officialUrl)}" target="_blank" rel="noreferrer">Verify at the official source before filing</a>`
-    : "";
-  if (!route.deadline) {
-    return `<p>No computed deadline. ${official}</p>`;
+  const subject = payload.case.parcel;
+  const noticeDate =
+    payload.case.userEvidence.borNoticeDate ?? payload.case.userEvidence.borDecisionDate;
+  const location =
+    route.venue === "ptab" && noticeDate
+      ? `Written BOR notice dated ${dateLabel(noticeDate)}`
+      : `${subject.townshipName} township`;
+  const timingText = (daysRemaining: number | null): string => {
+    if (daysRemaining === null) {
+      return "";
+    }
+    if (daysRemaining === 0) {
+      return "Today";
+    }
+    return daysRemaining > 0 ? `${daysRemaining} days away` : `${Math.abs(daysRemaining)} days ago`;
+  };
+  const deadlineRows = (route.deadlines ?? [])
+    .map(
+      (item) => `<div class="deadline-card">
+        <span>${escapeHtml(item.label)}</span>
+        <strong>${escapeHtml(dateLabel(item.date))}</strong>
+        ${item.daysRemaining === null ? "" : `<small>${escapeHtml(timingText(item.daysRemaining))}</small>`}
+      </div>`,
+    )
+    .join("");
+  return `<section class="panel deadline-panel" aria-labelledby="deadline-info">
+    <div class="section-heading-row">
+      <div>
+        <p class="eyebrow">Timing</p>
+        <h2 id="deadline-info">Deadline status</h2>
+      </div>
+      <span class="status-pill status-${escapeHtml(route.actionStatus)}">${escapeHtml(route.deadlineLabel ?? route.actionStatus)}</span>
+    </div>
+    <p class="deadline-headline">${escapeHtml(route.headline)}</p>
+    ${
+      deadlineRows
+        ? `<div class="deadline-cards">${deadlineRows}</div>`
+        : `<div class="deadline-unavailable"><strong>${escapeHtml(route.deadlineLabel ?? "Deadline unavailable")}</strong><span>Use the official source below for updates.</span></div>`
+    }
+    <dl class="compact-facts">
+      <div><dt>Venue</dt><dd>${escapeHtml(payload.venue.name)}</dd></div>
+      <div><dt>Basis</dt><dd>${escapeHtml(location)}</dd></div>
+      <div><dt>Official deadline source</dt><dd>${route.officialUrl ? externalLink(route.officialUrl, "Check official dates") : "Not available"}</dd></div>
+      <div><dt>Filing rules</dt><dd>${externalLink(payload.venue.rulesUrl, "Review what to submit")}</dd></div>
+    </dl>
+    <details class="reasoning-details"><summary>How this status was determined</summary><ul>${route.reasoning
+      .map((reason) => `<li>${linkedText(reason)}</li>`)
+      .join("")}</ul></details>
+  </section>`;
+}
+
+function renderMissingEvidenceForm(payload: CasePayload): string {
+  const fields = payload.evidence.comparableAnalysis.missingFields;
+  if (fields.length === 0) {
+    return "";
   }
-  const days =
-    route.daysRemaining === null
-      ? ""
-      : ` ${
-          route.daysRemaining >= 0
-            ? `${route.daysRemaining} days remaining.`
-            : `${Math.abs(route.daysRemaining)} days past the computed deadline.`
-        }`;
-  return `<p><strong>Deadline:</strong> ${escapeHtml(route.deadline)}.${escapeHtml(days)} ${official}</p>`;
+  return `<section class="panel" aria-labelledby="missing-public-data">
+    <h2 id="missing-public-data">Missing public data</h2>
+    <p>Some public fields needed for the comparable analysis were missing. If you have reliable values, add only those missing fields and rerun the review.</p>
+    <form id="missing-evidence-form" class="stack">
+      <div class="evidence-grid">
+        ${fields
+          .map(
+            (field) => `<label>
+              <span>${escapeHtml(field.label)}</span>
+              <input name="${escapeHtml(field.name)}" inputmode="decimal" required>
+              <span class="hint field-help-line">${escapeHtml(field.helpText)}</span>
+            </label>`,
+          )
+          .join("")}
+      </div>
+      <p class="hint">These values are used only as fallback inputs and will be labeled user-supplied.</p>
+      <button type="submit">Rerun with fallback values</button>
+    </form>
+  </section>`;
 }
 
 function renderComparables(payload: CasePayload): string {
   const comps = payload.evidence.comparableAnalysis;
+  const land = payload.evidence.landAssessment;
+  const officialRules = externalLink(payload.venue.rulesUrl, "See official rules");
   const profileTooltip = infoTooltip(
     "What comparable profile means",
     'A "profile" is the set of matching rules this tool uses to pick similar homes for the specific venue: size, age, neighborhood, and which assessment number is compared, because each venue weighs comparables differently.',
   );
-  const comparableNote =
-    comps.status === "ok"
-      ? `<p>Comparable analysis completed with the ${escapeHtml(comps.profileLabel)} profile using ${escapeHtml(comps.metricLabel)} per square foot. ${profileTooltip}</p>`
-      : `<p>${escapeHtml(comps.note)}</p>`;
   const similarityTooltip = infoTooltip(
     "What similarity score means",
     "Lower similarity scores mean the comparable is more similar to the subject based on size, age, and distance.",
   );
   const assessmentType = assessmentTypeLabel(comps.profileKey);
-  const rows = comps.exhibit
+  const filteredPool = filterBySimilarity(comps.pool, selectedSimilarityMax);
+  const filterValue = similarityFilterValue(selectedSimilarityMax);
+  const filterControls =
+    comps.pool.length > 0
+      ? `<div class="filter-row">
+        <label>
+          <span>Similarity score threshold</span>
+          <select id="similarity-filter">
+            ${SIMILARITY_BANDS.map(
+              (band) =>
+                `<option value="${escapeHtml(band.value)}"${band.value === filterValue ? " selected" : ""}>${escapeHtml(band.label)}</option>`,
+            ).join("")}
+          </select>
+        </label>
+        <p class="hint">0.00-0.10 excellent; 0.10-0.20 good; 0.20-0.35 usable; 0.35-0.50 broad match; above 0.50 questionable unless alternatives are sparse. Check every row before using it.</p>
+      </div>`
+      : "";
+  const comparisonToSubject = (avPerSqft: number): string => {
+    if (comps.subjectAvPerSqft === null || comps.subjectAvPerSqft <= 0) {
+      return '<span class="comparison neutral">Subject unavailable</span>';
+    }
+    const difference = ((avPerSqft - comps.subjectAvPerSqft) / comps.subjectAvPerSqft) * 100;
+    if (Math.abs(difference) < 0.5) {
+      return '<span class="comparison neutral">About the same</span>';
+    }
+    return difference < 0
+      ? `<span class="comparison lower">${numberText(Math.abs(difference), 1)}% lower</span>`
+      : `<span class="comparison higher">${numberText(difference, 1)}% higher</span>`;
+  };
+  const rows = filteredPool
     .map(
       (exhibit) => `<tr>
         <td>${escapeHtml(exhibit.comparable.pinFormatted)}</td>
@@ -900,62 +1099,138 @@ function renderComparables(payload: CasePayload): string {
         <td>${dollars(exhibit.comparable.salePrice)}</td>
         <td>${escapeHtml(assessmentType)}</td>
         <td>${dollars(exhibit.avPerSqft)}</td>
+        <td>${comparisonToSubject(exhibit.avPerSqft)}</td>
         <td>${numberText(exhibit.similarity, 3)}</td>
       </tr>`,
     )
     .join("");
   const table =
     rows.length === 0
-      ? "<p>No lower-assessed comparable exhibit is available from the current public data.</p>"
+      ? `<p class="empty-state">${comps.pool.length > 0 ? "No selected homes meet the current similarity filter." : "No comparable rows could be selected from the available public data."}</p>`
       : `<div class="table-wrap"><table>
-          <thead><tr><th>PIN</th><th>Distance km</th><th>Neighborhood</th><th>Property class</th><th>Building sqft</th><th>Year built</th><th>Sale date</th><th>Sale price</th><th>Assessment type</th><th>Assessment $/sqft</th><th>Similarity score ${similarityTooltip}</th></tr></thead>
+          <caption>${filteredPool.length} selected comparable ${filteredPool.length === 1 ? "home" : "homes"}; rows assessed above the subject are included for transparency.</caption>
+          <thead><tr><th>PIN</th><th>Distance km</th><th>Neighborhood</th><th>Property class</th><th>Building sqft</th><th>Year built</th><th>Sale date</th><th>Sale price</th><th>Assessment metric</th><th>${escapeHtml(comps.metricLabel)}/sqft</th><th>Compared with subject</th><th>Similarity score ${similarityTooltip}</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>`;
-  return `<section class="panel" aria-labelledby="step-four">
-    <div class="step-label">Step 4</div>
-    <h2 id="step-four">Evidence summary</h2>
-    <p class="metric-line"><strong>Evidence level:</strong> ${escapeHtml(
-      evidenceLevelLabel(payload.evidence.tier),
-    )}. ${escapeHtml(payload.evidence.tierMessage)} ${infoTooltip(
-      "What evidence level means",
-      "The evidence level is a rough screen of how much public data supports spending time on an appeal.",
-    )}</p>
-    ${comparableNote}
-    <p><strong>Pool:</strong> ${numberText(comps.poolSize)} similar homes, ${escapeHtml(
-      comps.scope ?? "no scope",
-    )}; subject ${escapeHtml(comps.metricLabel)}/sqft ${dollars(
-      comps.subjectAvPerSqft,
-    )}; median ${dollars(comps.medianAvPerSqft)}; gap ${numberText(comps.gapPct, 1)}%.</p>
+  const evidenceMessage =
+    payload.evidence.tier === "LIMITED"
+      ? `${escapeHtml(payload.evidence.tierMessage)} ${officialRules}.`
+      : escapeHtml(payload.evidence.tierMessage);
+  const interpretation =
+    comps.poolSize === 0 || comps.gapPct === null
+      ? "The available public data is not sufficient to compare the subject with a selected residential pool."
+      : comps.gapPct > 0
+        ? `The subject is assessed ${numberText(comps.gapPct, 1)}% above the selected-pool median on ${comps.metricLabel}/sqft. That difference may support a closer uniformity review, but each row still needs verification.`
+        : comps.gapPct < 0
+          ? `The subject is assessed ${numberText(Math.abs(comps.gapPct), 1)}% below the selected-pool median on ${comps.metricLabel}/sqft. These public comparables do not support a lower residential uniformity assessment.`
+          : `The subject is aligned with the selected-pool median on ${comps.metricLabel}/sqft, so this screen does not show a residential uniformity gap.`;
+  const argumentCards = payload.evidence.arguments.length
+    ? payload.evidence.arguments
+        .map(
+          (argument) => `<article class="argument-card">
+            <span class="argument-strength">${escapeHtml(argument.strength)}</span>
+            <h4>${escapeHtml(argumentTypeLabel(argument.argumentType))}</h4>
+            <p>${escapeHtml(argument.text)}</p>
+          </article>`,
+        )
+        .join("")
+    : `<div class="empty-state"><strong>No strong public-data argument was found.</strong><span>This does not rule out condition, appraisal, exemption, or factual-error evidence that is not present in the public data.</span></div>`;
+  return `<section class="panel evidence-panel" aria-labelledby="evidence-summary">
+    <div class="section-heading-row evidence-heading">
+      <div>
+        <p class="eyebrow">Public-data screen</p>
+        <h2 id="evidence-summary">Evidence summary</h2>
+      </div>
+      <span class="evidence-level level-${escapeHtml(payload.evidence.tier.toLowerCase())}">${escapeHtml(
+        evidenceLevelLabel(payload.evidence.tier),
+      )}</span>
+    </div>
+
+    <div class="evidence-verdict">
+      <h3>What the numbers say</h3>
+      <p>${escapeHtml(interpretation)}</p>
+      <p class="hint">${evidenceMessage} ${infoTooltip(
+        "What evidence level means",
+        "The evidence level is a rough screen of how much public data supports spending time on an appeal.",
+      )}</p>
+    </div>
+
+    <div class="metric-grid" aria-label="Comparable analysis key figures">
+      <div><span>Selected homes</span><strong>${numberText(comps.poolSize)}</strong><small>${escapeHtml(comps.scope ?? "Scope unavailable")}</small></div>
+      <div><span>Subject ${escapeHtml(comps.metricLabel)}/sqft</span><strong>${dollars(comps.subjectAvPerSqft)}</strong></div>
+      <div><span>Pool median</span><strong>${dollars(comps.medianAvPerSqft)}</strong></div>
+      <div><span>Subject vs median</span><strong>${comps.gapPct === null ? "Not available" : `${numberText(comps.gapPct, 1)}%`}</strong></div>
+    </div>
+
+    <details class="analysis-details">
+      <summary>Analysis method and value context</summary>
+      <p>${
+        comps.status === "ok"
+          ? `Comparable analysis completed with the ${escapeHtml(comps.profileLabel)} profile using ${escapeHtml(comps.metricLabel)}/sqft. ${profileTooltip}`
+          : escapeHtml(comps.note)
+      }</p>
+      <p><strong>Total AV:</strong> Shown for value context, overvaluation checks, and savings estimates. It is not used by itself to generate residential uniformity evidence.</p>
+      <p><strong>Land check:</strong> ${escapeHtml(land.note)} Subject Land AV/sqft ${dollars(
+        land.subjectLandAvPerSqft,
+      )}; selected-pool median ${dollars(land.medianLandAvPerSqft)}.</p>
+    </details>
+
+    <div class="subsection-heading">
+      <div><p class="eyebrow">Comparable detail</p><h3>Selected comparable homes</h3></div>
+      <p>All selected rows are shown, not only homes assessed below the subject.</p>
+    </div>
+    ${filterControls}
     ${table}
-    <h3 class="heading-with-tooltip">Arguments ${infoTooltip(
+
+    <div class="subsection-heading"><div><p class="eyebrow">Assessment screen</p><h3 class="heading-with-tooltip">Potential appeal arguments ${infoTooltip(
       "What arguments mean",
       "An argument is a distinct reason the assessment may be too high: uniformity, overvaluation, description error, or assessment shock. Strength labels are rough screens, not legal conclusions.",
-    )}</h3>
-    ${
-      payload.evidence.arguments.length
-        ? `<ul>${payload.evidence.arguments
-            .map(
-              (argument) =>
-                `<li><strong>${escapeHtml(argument.argumentType)}:</strong> ${escapeHtml(argument.text)}</li>`,
-            )
-            .join("")}</ul>`
-        : "<p>No strong public-data argument was found. Add sale, appraisal, condition, or factual-error evidence if available.</p>"
-    }
-    <h3 class="heading-with-tooltip">Rough savings estimate ${infoTooltip(
-      "How rough savings are estimated",
-      "Estimated savings = ΔAV × E × r, where ΔAV is the assessed-value reduction, E is the state equalizer, and r is the assumed tax rate. The range is shown as ±20% and is not a promise.",
-    )}</h3>
-    <p>${dollars(payload.evidence.savingsAssumptions.low)} to ${dollars(
-      payload.evidence.savingsAssumptions.high,
-    )}, with point estimate ${dollars(payload.evidence.savingsAssumptions.point)}.</p>
+    )}</h3></div></div>
+    <div class="argument-grid">${argumentCards}</div>
+
+    <div class="savings-card">
+      <div><p class="eyebrow">If a reduction is supported</p><h3 class="heading-with-tooltip">Rough savings estimate ${infoTooltip(
+        "How rough savings are estimated",
+        "Estimated savings = ΔAV × E × r, where ΔAV is the assessed-value reduction, E is the state equalizer, and r is the assumed tax rate. The range is shown as ±20% and is not a promise.",
+      )}</h3></div>
+      <strong>${dollars(payload.evidence.savingsAssumptions.low)} to ${dollars(
+        payload.evidence.savingsAssumptions.high,
+      )}</strong>
+      <span>Point estimate ${dollars(payload.evidence.savingsAssumptions.point)}</span>
+    </div>
     <p class="hint">Assumes equalizer ${payload.evidence.savingsAssumptions.stateEqualizer} and ${escapeHtml(
       payload.evidence.savingsAssumptions.taxRateSource,
     )}; this is a rough range, not a promise.</p>
+    <p><a href="/methodology">Read the methodology</a></p>
+  </section>`;
+}
+
+function renderWhatsNext(payload: CasePayload, printQuery: URLSearchParams): string {
+  const officialSubmission = externalLink(payload.venue.submissionUrl, "official submission page");
+  const officialRules = externalLink(payload.venue.rulesUrl, "official rules and requirements");
+  return `<section class="panel" aria-labelledby="whats-next">
+    <h2 id="whats-next">What's Next?</h2>
+    <p>You can download a PDF summary of the comparative analysis shown above. If you decide to appeal at ${escapeHtml(
+      payload.venue.name,
+    )}, you can submit that PDF with the other documents the venue requires as part of your evidence.</p>
+    <p>Double-check every Appeal Compass finding before filing. This evidence is not a guarantee that an appeal will succeed.</p>
+    <p>Other documented factors may also support a property-tax reduction, including condition issues, vacancy, demolition, incorrect property characteristics, recent sale or appraisal evidence, and other factual errors.</p>
+    <p>Some homeowners may qualify for exemptions, including homeowner, senior, senior freeze, disability, disabled veteran, returning veteran, home improvement, and long-time occupant exemptions. Verify eligibility on the ${externalLink(
+      CCAO_EXEMPTIONS_URL,
+      "Cook County Assessor exemptions page",
+    )}.</p>
+    <p>Before filing, review the ${officialSubmission} and ${officialRules} for exactly what to submit.</p>
+    <div class="actions">
+      <a class="button-link" href="/print?${printQuery.toString()}">Print / Save as PDF</a>
+      <button type="button" id="download-comps" class="secondary">Download comps (.xlsx)</button>
+    </div>
   </section>`;
 }
 
 function renderResults(payload: CasePayload, query: URLSearchParams): void {
   lastCasePayload = payload;
+  lastCaseQuery = new URLSearchParams(query);
+  selectedSimilarityMax = parseSimilarityMax(lastCaseQuery.get("maxSimilarity"));
   const storage = browserSessionStorage();
   if (storage) {
     saveAssessmentSnapshot(storage, query, payload);
@@ -984,13 +1259,7 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
   }
   results.innerHTML = `
     <section class="notice"><strong>${escapeHtml(payload.evidence.disclaimers[0])}</strong></section>
-    <section class="panel" aria-labelledby="step-three">
-      <div class="step-label">Step 3</div>
-      <h2 id="step-three">Routing decision</h2>
-      <p class="headline">${escapeHtml(payload.routing.headline)}</p>
-      ${renderDeadline(payload)}
-      <ul>${payload.routing.reasoning.map((reason) => `<li>${linkedText(reason)}</li>`).join("")}</ul>
-    </section>
+    ${renderDeadlineInfo(payload)}
 
     <section class="subject panel">
       <h2>Subject property</h2>
@@ -999,32 +1268,27 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
         ${subjectAddress ? `<div><dt>Address</dt><dd>${escapeHtml(subjectAddress)}</dd></div>` : ""}
         <div><dt>Class / township</dt><dd>${escapeHtml(subject.propertyClass)} / ${escapeHtml(subject.townshipName)}</dd></div>
         <div><dt>Building sqft</dt><dd>${numberText(subject.buildingSqft)}</dd></div>
+        <div><dt>Land sqft</dt><dd>${numberText(subject.landSqft)}</dd></div>
+        <div><dt>Assessment year</dt><dd>${numberText(subject.assessmentYear)}</dd></div>
         <div><dt>Total AV</dt><dd>${dollars(subject.currentAv)}</dd></div>
         <div><dt>Improvement AV</dt><dd>${dollars(subject.currentImprovementAv)}</dd></div>
+        <div><dt>Land AV</dt><dd>${dollars(subject.currentLandAv)}</dd></div>
       </dl>
+      <p class="hint">Total AV is context for value checks and savings estimates. Residential comparable evidence uses Improvement AV/sqft.</p>
       ${
         userValues.length
-          ? `<p class="tagline">${escapeHtml(userValues.join("; "))} - user-supplied; documentation required.</p>`
+          ? `<p class="tagline">${escapeHtml(userValues.join("; "))} - user-supplied.</p>`
           : ""
       }
     </section>
 
+    ${noticeList(payload)}
+
+    ${renderMissingEvidenceForm(payload)}
+
     ${renderComparables(payload)}
 
-    <section class="panel" aria-labelledby="step-five">
-      <div class="step-label">Step 5</div>
-      <h2 id="step-five">${escapeHtml(payload.venue.name)} checklist</h2>
-      <p class="hint">Use this checklist to assemble documents before filing at the official venue.</p>
-      <ul>${payload.venue.checklist.map((item) => `<li>${linkedText(item)}</li>`).join("")}</ul>
-      <div class="actions">
-        <a class="button-link" href="/print?${printQuery.toString()}">Print / Save as PDF</a>
-        <button type="button" id="download-comps" class="secondary">Download comps (.xlsx)</button>
-      </div>
-    </section>
-
-    ${renderExemptionsSection()}
-
-    ${warningList(payload.warnings)}
+    ${renderWhatsNext(payload, printQuery)}
   `;
 }
 
@@ -1177,12 +1441,14 @@ async function submitContact(form: HTMLFormElement): Promise<void> {
     return;
   }
   const data = new FormData(form);
+  const topic = data.get("topic");
   const turnstileToken = data.get("cf-turnstile-response");
   setContactStatus("Sending message...");
   const response = await fetch("/api/contact", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
+      topic: data.get("topic"),
       name: data.get("name"),
       email: data.get("email"),
       message: data.get("message"),
@@ -1203,18 +1469,40 @@ async function submitContact(form: HTMLFormElement): Promise<void> {
   }
   setContactStatus(result.message ?? "Message sent.");
   form.reset();
+  const topicInput = form.querySelector<HTMLInputElement>("#contact-topic");
+  if (topicInput && typeof topic === "string") {
+    topicInput.value = topic;
+  }
 }
 
-function clearEvidenceInputs(): void {
-  const evidence = document.querySelector<HTMLElement>("details.evidence");
-  if (!evidence) {
+function updateSimilarityFilter(value: string): void {
+  if (!lastCasePayload || !lastCaseQuery) {
     return;
   }
-  for (const element of Array.from(evidence.querySelectorAll("[data-evidence-input]"))) {
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      element.value = "";
+  const max = parseSimilarityMax(value);
+  if (max === null) {
+    lastCaseQuery.delete("maxSimilarity");
+  } else {
+    lastCaseQuery.set("maxSimilarity", similarityFilterValue(max));
+  }
+  renderResults(lastCasePayload, lastCaseQuery);
+}
+
+function submitMissingEvidence(form: HTMLFormElement): void {
+  if (!lastCaseQuery || !form.reportValidity()) {
+    return;
+  }
+  const params = new URLSearchParams(lastCaseQuery);
+  for (const element of Array.from(form.elements)) {
+    if (!(element instanceof HTMLInputElement) || !element.name) {
+      continue;
+    }
+    const value = element.value.trim();
+    if (value) {
+      params.set(element.name, value);
     }
   }
+  void loadCase(params);
 }
 
 function closeTooltips(except: HTMLButtonElement | null = null): void {
@@ -1235,18 +1523,26 @@ function closeTooltips(except: HTMLButtonElement | null = null): void {
 
 function positionTooltip(button: HTMLButtonElement, bubble: HTMLElement): void {
   bubble.removeAttribute("style");
-  if (!window.matchMedia("(max-width: 760px)").matches) {
-    return;
-  }
   const rect = button.getBoundingClientRect();
   const viewportPadding = 16;
-  const preferredTop = rect.bottom + 8;
-  const maxTop = window.innerHeight - bubble.offsetHeight - viewportPadding;
-  const top = Math.max(viewportPadding, Math.min(preferredTop, maxTop));
+  const maxWidth = Math.min(304, window.innerWidth - viewportPadding * 2);
   bubble.style.position = "fixed";
-  bubble.style.inset = `${top}px ${viewportPadding}px auto ${viewportPadding}px`;
-  bubble.style.width = "auto";
+  bubble.style.width = `${maxWidth}px`;
   bubble.style.transform = "none";
+  const bubbleHeight = bubble.offsetHeight;
+  const preferredTop = rect.top - bubbleHeight - 8;
+  const fallbackTop = rect.bottom + 8;
+  const top =
+    preferredTop >= viewportPadding
+      ? preferredTop
+      : Math.min(fallbackTop, window.innerHeight - bubbleHeight - viewportPadding);
+  const centeredLeft = rect.left + rect.width / 2 - maxWidth / 2;
+  const left = Math.max(
+    viewportPadding,
+    Math.min(centeredLeft, window.innerWidth - maxWidth - viewportPadding),
+  );
+  bubble.style.position = "fixed";
+  bubble.style.inset = `${Math.max(viewportPadding, top)}px auto auto ${left}px`;
 }
 
 function toggleTooltip(button: HTMLButtonElement): void {
@@ -1269,7 +1565,7 @@ function downloadComparableWorkbook(): void {
   if (!lastCasePayload) {
     return;
   }
-  const workbook = buildComparableWorkbook(lastCasePayload);
+  const workbook = buildComparableWorkbook(lastCasePayload, selectedSimilarityMax);
   const workbookBuffer = new ArrayBuffer(workbook.byteLength);
   new Uint8Array(workbookBuffer).set(workbook);
   const blob = new Blob([workbookBuffer], {
@@ -1285,7 +1581,11 @@ function downloadComparableWorkbook(): void {
   URL.revokeObjectURL(url);
 }
 
-shell();
+if (IS_METHODOLOGY_PAGE) {
+  methodologyPage();
+} else {
+  shell();
+}
 
 const form = document.querySelector<HTMLFormElement>("#case-form");
 if (form) {
@@ -1306,6 +1606,10 @@ document.addEventListener("submit", (event) => {
     event.preventDefault();
     void submitContact(form);
   }
+  if (form instanceof HTMLFormElement && form.id === "missing-evidence-form") {
+    event.preventDefault();
+    submitMissingEvidence(form);
+  }
 });
 
 document.addEventListener("change", (event) => {
@@ -1320,6 +1624,9 @@ document.addEventListener("change", (event) => {
       setFormError("");
       updateConditionalFields(activeForm);
     }
+    if (target instanceof HTMLSelectElement && target.id === "similarity-filter") {
+      updateSimilarityFilter(target.value);
+    }
   }
 });
 
@@ -1332,9 +1639,6 @@ document.addEventListener("click", (event) => {
       return;
     }
     closeTooltips();
-  }
-  if (target instanceof HTMLElement && target.id === "clear-evidence") {
-    clearEvidenceInputs();
   }
   if (target instanceof HTMLElement && target.id === "download-comps") {
     downloadComparableWorkbook();
@@ -1351,7 +1655,14 @@ document.addEventListener("click", (event) => {
   if (target instanceof HTMLElement && target.id === "open-contact-from-refusal") {
     event.preventDefault();
     closeEntityRefusalPanel();
-    openContactPanel();
+    openContactPanel("commercial_interest");
+  }
+  if (target instanceof HTMLElement && target.id === "open-commercial-interest") {
+    event.preventDefault();
+    openContactPanel("commercial_interest");
+  }
+  if (target instanceof HTMLElement && target.id === "suggest-feature") {
+    openContactPanel("feature_suggestion");
   }
   if (
     target instanceof HTMLElement &&
@@ -1377,11 +1688,13 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("pageshow", (event) => {
-  if (event.persisted) {
+  if (event.persisted && !IS_METHODOLOGY_PAGE) {
     restoreLastAssessment();
   }
 });
 
-restoreLastAssessment();
+if (!IS_METHODOLOGY_PAGE) {
+  restoreLastAssessment();
+}
 
 document.documentElement.dataset.enhanced = "true";

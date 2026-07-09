@@ -1,10 +1,15 @@
 import {
   ASSESSMENT_YEAR,
+  BOR_DATES_URL,
   BOR_OFFICIAL_URL,
   BOR_PORTAL_URL,
+  BOR_PROPERTY_OWNER_GUIDE_URL,
+  BOR_RULES_URL,
+  CCAO_APPEALS_URL,
   CCAO_OFFICIAL_URL,
   PTAB_EFILE_URL,
   PTAB_OFFICIAL_URL,
+  PTAB_RESIDENTIAL_APPEAL_FORM_URL,
 } from "./config";
 import { isWithinYearsOf } from "./math";
 import type {
@@ -16,14 +21,18 @@ import type {
 } from "./models";
 
 const OTHER_POSSIBLE_FACTORS =
-  "Other possible appeal factors: condition issues, vacancy, demolition, and exemption-related statuses such as senior, disability, or veteran status can be raised directly with the venue when you have documentation.";
+  "Other possible reduction factors can include documented condition issues, vacancy, demolition, incorrect property characteristics, recent sale/appraisal evidence, and other factual errors.";
 const CERTIFICATE_OF_ERROR_EXPLANATION =
   "A Certificate of Error is a Cook County process to fix past-year mistakes - like a missed exemption or wrong property facts - which can lead to a refund. Ask the Assessor's office about it.";
+const EXEMPTION_FACTORS =
+  "Exemptions may also reduce taxes for qualifying homeowners, including owner-occupants, seniors, veterans, people with disabilities, returning veterans, home-improvement cases, and some long-time occupants; verify eligibility with the official venue.";
 
 export interface VenueAdapter {
   venueKey: ResolvedVenue;
   venueName: string;
   officialUrl: string;
+  submissionUrl: string;
+  rulesUrl: string;
   checklist(caseFile: CaseFile): string[];
   sections(caseFile: CaseFile, evidence: EvidenceSummary, route: RouteResult): PacketSection[];
 }
@@ -32,14 +41,16 @@ class AssessorAdapter implements VenueAdapter {
   venueKey = "assessor" as const;
   venueName = "Cook County Assessor Appeal";
   officialUrl = CCAO_OFFICIAL_URL;
+  submissionUrl = CCAO_APPEALS_URL;
+  rulesUrl = CCAO_APPEALS_URL;
 
   checklist(caseFile: CaseFile): string[] {
     const items = [
-      "File during the township Assessor appeal window; verify at the official source.",
-      "Attach comparable, sale, appraisal, condition, and factual-error evidence.",
-      "If filing later at BOR, save the Assessor appeal confirmation and documents.",
-      CERTIFICATE_OF_ERROR_EXPLANATION,
+      "Download the Appeal Compass PDF summary and use it only after double-checking every finding.",
+      `Submit the PDF with the other required Assessor appeal documents listed at ${this.submissionUrl}.`,
+      "This evidence can support an appeal, but it does not guarantee success.",
       OTHER_POSSIBLE_FACTORS,
+      EXEMPTION_FACTORS,
     ];
     if (caseFile.userEvidence.actualSqft) {
       items.push(
@@ -50,17 +61,21 @@ class AssessorAdapter implements VenueAdapter {
   }
 
   sections(caseFile: CaseFile, _evidence: EvidenceSummary, route: RouteResult): PacketSection[] {
+    const timingLine =
+      route.deadlineState === "not_published"
+        ? "The township's 2026 filing dates are not published yet; monitor the official Assessor calendar."
+        : "Use this first-level appeal while the township window is open.";
     const sections: PacketSection[] = [
       {
         title: "Assessor Filing Instructions",
         lines: [
           "Recommended venue: Cook County Assessor.",
-          "Use this first-level appeal while the township window is open.",
+          timingLine,
           "Property-description errors are strongest here when documented.",
           `Official source: ${this.officialUrl}`,
         ],
       },
-      { title: "Assessor Checklist", lines: this.checklist(caseFile) },
+      { title: "What's Next?", lines: this.checklist(caseFile) },
     ];
     if (route.actionStatus === "closed") {
       sections.push({
@@ -80,17 +95,17 @@ class BoardOfReviewAdapter implements VenueAdapter {
   venueKey = "bor" as const;
   venueName = "Cook County Board of Review Appeal";
   officialUrl = BOR_OFFICIAL_URL;
+  submissionUrl = BOR_PROPERTY_OWNER_GUIDE_URL;
+  rulesUrl = BOR_RULES_URL;
 
   checklist(caseFile: CaseFile): string[] {
     const items = [
-      "[Rule 1] Pro se packet is for an individual taxpayer. Entities need counsel.",
-      `[Rule 5] File through the BOR portal: ${BOR_PORTAL_URL}`,
-      "[Rule 7] File by the township close date; late complaints are not accepted.",
-      "[Rule 13] Submit all evidence by the evidence deadline.",
-      "[Rule 15] If you filed at the Assessor, attach Assessor appeal documents.",
-      "[Rule 16] Sign and complete the complaint truthfully.",
-      "[Rule 26] Re-review requests must be made promptly after the BOR decision letter.",
+      "Download the Appeal Compass PDF summary and use it only after double-checking every finding.",
+      `Submit the PDF with the other required BOR appeal documents through the BOR portal: ${BOR_PORTAL_URL}`,
+      `Review the BOR property-owner guide and official rules before filing: ${this.submissionUrl} and ${this.rulesUrl}`,
+      "This evidence can support an appeal, but it does not guarantee success.",
       OTHER_POSSIBLE_FACTORS,
+      EXEMPTION_FACTORS,
     ];
     const purchaseDate = caseFile.userEvidence.purchaseDate;
     if (purchaseDate && isWithinYearsOf(purchaseDate, `${ASSESSMENT_YEAR}-01-01`, 3)) {
@@ -105,25 +120,38 @@ class BoardOfReviewAdapter implements VenueAdapter {
   }
 
   sections(caseFile: CaseFile, _evidence: EvidenceSummary, route: RouteResult): PacketSection[] {
+    const timingLine =
+      route.deadlineState === "not_published"
+        ? "Tax Year 2026 township filing and evidence dates are not published yet; monitor the official dates page and preregister in the BOR portal if appropriate."
+        : "Use the close date and evidence deadline shown in the routing section.";
     const sections: PacketSection[] = [
       {
         title: "BOR Filing Instructions",
         lines: [
           "Recommended venue: Cook County Board of Review.",
           "This is the second-level Cook County appeal forum.",
-          "Use the close date and evidence deadline shown in the routing section.",
-          `Official source: ${this.officialUrl}`,
+          timingLine,
+          `Official dates source: ${BOR_DATES_URL}`,
         ],
       },
-      { title: "BOR Rules Checklist", lines: this.checklist(caseFile) },
+      { title: "What's Next?", lines: this.checklist(caseFile) },
     ];
-    if (route.actionStatus === "closed") {
+    if (route.deadlineState === "not_published") {
+      sections.push({
+        title: "Schedule-Pending Preparation",
+        lines: [
+          "The official BOR page still lists the prior Tax Year 2025 schedule, not Tax Year 2026 dates.",
+          "Prepare evidence now, but do not use the expired 2025 dates as current filing deadlines.",
+          "If you later receive a BOR decision and want PTAB screening, choose PTAB and enter the date on the written decision notice.",
+        ],
+      });
+    } else if (route.actionStatus === "closed") {
       sections.push({
         title: "Closed-Window Preparation",
         lines: [
           "The selected BOR window is not currently open in the configured calendar.",
           "Use this packet to prepare evidence for the next BOR session, but verify current dates at the official source before filing.",
-          "If you later receive a BOR decision and want PTAB screening, choose PTAB and enter the written BOR decision date.",
+          "If you later receive a BOR decision and want PTAB screening, choose PTAB and enter the date on the written decision notice.",
         ],
       });
     }
@@ -135,32 +163,35 @@ class PtabAdapter implements VenueAdapter {
   venueKey = "ptab" as const;
   venueName = "Illinois Property Tax Appeal Board Appeal";
   officialUrl = PTAB_OFFICIAL_URL;
+  submissionUrl = PTAB_RESIDENTIAL_APPEAL_FORM_URL;
+  rulesUrl = PTAB_OFFICIAL_URL;
 
   checklist(): string[] {
     return [
-      "Attach the BOR written decision notice. PTAB deadline is 30 days from that notice.",
-      "Use the correct PTAB Residential Appeal form and include the subject PIN.",
-      "State whether you are raising equity, sale, appraisal, or factual evidence.",
-      "Taxes must be paid while PTAB is pending; refunds may follow if the appeal succeeds.",
-      "PTAB can take a long time. Keep copies of all filings and notices.",
-      "The board of review and taxing bodies may intervene.",
+      "Download the Appeal Compass PDF summary and use it only after double-checking every finding.",
+      `Submit the PDF with the required PTAB residential appeal documents listed at ${this.submissionUrl}.`,
+      "Attach the BOR written decision notice and verify the PTAB deadline before filing.",
+      "This evidence can support an appeal, but it does not guarantee success.",
       OTHER_POSSIBLE_FACTORS,
+      EXEMPTION_FACTORS,
       `PTAB e-filing/source: ${PTAB_EFILE_URL}`,
     ];
   }
 
-  sections(): PacketSection[] {
+  sections(_caseFile: CaseFile, _evidence: EvidenceSummary, route: RouteResult): PacketSection[] {
     return [
       {
         title: "PTAB Filing Instructions",
         lines: [
           "Recommended venue: Illinois Property Tax Appeal Board.",
           "PTAB is available only after a BOR decision for the same tax year.",
-          "This packet computes a PTAB deadline only from your BOR decision date.",
+          route.deadline
+            ? "The displayed date is a conservative notice-based date; a later Cook County township-transmission date may control."
+            : "A filing date cannot be shown until the written BOR notice arrives and its date is entered.",
           `Official source: ${this.officialUrl}`,
         ],
       },
-      { title: "PTAB Checklist", lines: this.checklist() },
+      { title: "What's Next?", lines: this.checklist() },
       {
         title: "PTAB Comparable Grid Public-Data Limits",
         lines: [
@@ -178,15 +209,17 @@ class ClosedSessionAdapter implements VenueAdapter {
   venueKey = "closed" as const;
   venueName = "Cook County Appeal Preparation Packet";
   officialUrl = CCAO_OFFICIAL_URL;
+  submissionUrl = CCAO_APPEALS_URL;
+  rulesUrl = CCAO_APPEALS_URL;
 
   checklist(): string[] {
     return [
-      "Double check appeal deadlines, info might have been updated or corrected.",
-      "Double-check the tool-generated information and add evidence Appeal Compass cannot provide, such as photos, property record cards, appraisals, and condition documentation.",
-      "If you already received a BOR decision, answer the Step 1 BOR-decision question and enter the decision date so Appeal Compass can compute the PTAB deadline.",
-      CERTIFICATE_OF_ERROR_EXPLANATION,
-      "Check exemptions now; exemptions may be worth more than an assessment appeal.",
+      "Download the Appeal Compass PDF summary and use it only after double-checking every finding.",
+      `Verify the correct active venue and required submission documents at ${this.submissionUrl}.`,
+      "This evidence can support a future appeal, but it does not guarantee success.",
       OTHER_POSSIBLE_FACTORS,
+      EXEMPTION_FACTORS,
+      CERTIFICATE_OF_ERROR_EXPLANATION,
     ];
   }
 
@@ -201,7 +234,7 @@ class ClosedSessionAdapter implements VenueAdapter {
           `Official source: ${this.officialUrl}`,
         ],
       },
-      { title: "Closed-Window Checklist", lines: this.checklist() },
+      { title: "What's Next?", lines: this.checklist() },
     ];
   }
 }

@@ -16,7 +16,10 @@
     "full_baths": null,
     "lat": 41.99015,
     "lon": -87.69715,
+    "current_assessment_year": 2025,
     "current_av": 30000,
+    "current_improvement_av": null,
+    "current_land_av": null,
     "prior_final_av": 29000
   },
   "assessment_history": [

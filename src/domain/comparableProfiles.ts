@@ -1,6 +1,6 @@
 import type { ResolvedVenue } from "./models";
 
-export type AssessmentMetric = "total_av" | "improvement_av";
+export type AssessmentMetric = "improvement_av";
 
 export interface SimilarityStep {
   sqftTolerance: number;
@@ -28,8 +28,8 @@ export interface ComparableProfile {
 export const ASSESSOR_PROFILE: ComparableProfile = {
   key: "assessor",
   venueLabel: "Cook County Assessor",
-  metric: "total_av",
-  metricLabel: "total assessed value",
+  metric: "improvement_av",
+  metricLabel: "Improvement AV",
   minimumComparables: 3,
   targetComparables: 8,
   similaritySteps: [
@@ -45,14 +45,14 @@ export const ASSESSOR_PROFILE: ComparableProfile = {
   landTolerance: null,
   feasibilityVerdict: "FEASIBLE-WITH-CAVEATS",
   sourceNote:
-    "Profile verified against reachable Phase 2 official guidance and preserved in docs/LEARNINGS.md.",
+    "Profile uses residential improvement-assessment uniformity so land differences do not independently drive comparable evidence.",
 };
 
 export const BOR_PROFILE: ComparableProfile = {
   key: "bor",
   venueLabel: "Cook County Board of Review",
   metric: "improvement_av",
-  metricLabel: "building assessment",
+  metricLabel: "Improvement AV",
   minimumComparables: 3,
   targetComparables: 8,
   similaritySteps: [
@@ -75,7 +75,7 @@ export const PTAB_PROFILE: ComparableProfile = {
   key: "ptab",
   venueLabel: "Illinois PTAB",
   metric: "improvement_av",
-  metricLabel: "improvement assessment",
+  metricLabel: "Improvement AV",
   minimumComparables: 3,
   targetComparables: 6,
   similaritySteps: [{ sqftTolerance: 0.25, yearTolerance: 15 }],

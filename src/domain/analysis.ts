@@ -18,6 +18,8 @@ import type {
   EvidenceArgument,
   EvidenceSummary,
   EvidenceTier,
+  LandAssessmentCheck,
+  MissingComparableField,
   Parcel,
   ResolvedVenue,
 } from "./models";
@@ -76,10 +78,8 @@ function similarity(subject: CaseFile, comp: Comparable): number {
 }
 
 function subjectMetricValue(parcel: Parcel, profile: ComparableProfile): number | null {
-  if (profile.metric === "improvement_av") {
-    return parcel.currentImprovementAv;
-  }
-  return parcel.currentAv;
+  void profile;
+  return parcel.currentImprovementAv;
 }
 
 function effectiveSqft(caseFile: CaseFile): number | null {
@@ -95,10 +95,7 @@ function effectiveMetricValue(caseFile: CaseFile, profile: ComparableProfile): n
   if (official !== null) {
     return official;
   }
-  if (profile.metric === "improvement_av") {
-    return positive(caseFile.userEvidence.actualImprovementAv);
-  }
-  return positive(caseFile.userEvidence.actualAv);
+  return positive(caseFile.userEvidence.actualImprovementAv);
 }
 
 function userSuppliedWarnings(caseFile: CaseFile, profile: ComparableProfile): string[] {
@@ -107,51 +104,87 @@ function userSuppliedWarnings(caseFile: CaseFile, profile: ComparableProfile): s
     positive(caseFile.parcel.buildingSqft) === null &&
     positive(caseFile.userEvidence.actualSqft)
   ) {
-    warnings.push(
-      "Using user-supplied building sqft for comparable analysis; document it with a property record card, appraisal, plans, or other reliable source.",
-    );
-  }
-  if (positive(caseFile.parcel.currentAv) === null && positive(caseFile.userEvidence.actualAv)) {
-    warnings.push(
-      "Using user-supplied current total assessed value for analysis; attach official assessment documentation.",
-    );
+    warnings.push("Using user-supplied building sqft for comparable analysis.");
   }
   if (
     profile.metric === "improvement_av" &&
     positive(caseFile.parcel.currentImprovementAv) === null &&
     positive(caseFile.userEvidence.actualImprovementAv)
   ) {
-    warnings.push(
-      "Using user-supplied building/improvement assessment for comparable analysis; document it with the property record card or official assessment notice.",
-    );
+    warnings.push("Using user-supplied building/improvement assessment for comparable analysis.");
   }
   return warnings;
 }
 
-function missingSubjectFlags(caseFile: CaseFile, profile: ComparableProfile): string[] {
-  const flags: string[] = [];
+function missingSubjectFields(
+  caseFile: CaseFile,
+  profile: ComparableProfile,
+): MissingComparableField[] {
+  const fields: MissingComparableField[] = [];
   if (!effectiveSqft(caseFile)) {
-    flags.push("the Actual sqft field");
+    fields.push({
+      name: "actualSqft",
+      label: "Documented building sqft",
+      helpText:
+        "Use the building/living area from a property record card, appraisal, plans, or other reliable source.",
+    });
   }
-  if (profile.metric === "improvement_av") {
-    if (!effectiveMetricValue(caseFile, profile)) {
-      flags.push("the Actual improvement AV field");
-    }
-  } else if (!effectiveMetricValue(caseFile, profile)) {
-    flags.push("the Actual total AV field");
+  if (!effectiveMetricValue(caseFile, profile)) {
+    fields.push({
+      name: "actualImprovementAv",
+      label: "Documented Improvement AV",
+      helpText:
+        "Use the building/improvement assessed value from an official assessment notice or property record card.",
+    });
   }
-  return flags;
+  return fields;
 }
 
 function comparableMetricValue(comp: Comparable, profile: ComparableProfile): number | null {
-  if (profile.metric === "improvement_av") {
-    return comp.improvementAv;
-  }
-  return comp.av;
+  void profile;
+  return comp.improvementAv;
 }
 
 function samePropertyClass(parcel: Parcel, comp: Comparable): boolean {
   return comp.propertyClass !== null && comp.propertyClass.trim() === parcel.propertyClass.trim();
+}
+
+function sameAssessmentYear(parcel: Parcel, comp: Comparable): boolean {
+  return (
+    parcel.assessmentYear === null ||
+    comp.assessmentYear === null ||
+    comp.assessmentYear === parcel.assessmentYear
+  );
+}
+
+function subjectDataWarnings(parcel: Parcel): string[] {
+  const warnings: string[] = [];
+  if (positive(parcel.currentImprovementAv) === null) {
+    warnings.push(
+      "Public Improvement AV is missing or nonpositive; comparable uniformity analysis needs a fallback Improvement AV.",
+    );
+  }
+  if (positive(parcel.buildingSqft) === null) {
+    warnings.push(
+      "Public building square footage is missing or nonpositive; comparable uniformity analysis needs a fallback building sqft value.",
+    );
+  }
+  if (positive(parcel.currentImprovementAv) === null && positive(parcel.currentAv) !== null) {
+    warnings.push(
+      "This parcel may have little or no assessed improvement value. Vacant or no-improvement parcels require manual review before using residential comparable evidence.",
+    );
+  }
+  if (parcel.assessmentYear === null) {
+    warnings.push(
+      "The public assessment year for the subject could not be confirmed; verify the subject and comparable values use the same assessment year.",
+    );
+  }
+  if (/^(211|212|234|278)$/.test(parcel.propertyClass.trim())) {
+    warnings.push(
+      "This residential class can involve multi-unit, multi-building, or other-improvement details. Verify the property record card before relying on Improvement AV/sqft.",
+    );
+  }
+  return warnings;
 }
 
 function profiledAnalysis(input: {
@@ -159,6 +192,7 @@ function profiledAnalysis(input: {
   note: string;
   profile: ComparableProfile;
   warnings?: string[];
+  missingFields?: MissingComparableField[];
   missingDataRate?: number | null;
   scope?: string | null;
   poolSize?: number;
@@ -175,6 +209,7 @@ function profiledAnalysis(input: {
     profileKey: input.profile.key,
     profileLabel: input.profile.venueLabel,
     metricLabel: input.profile.metricLabel,
+    missingFields: input.missingFields ?? [],
     warnings: input.warnings ?? [],
     missingDataRate: input.missingDataRate ?? null,
     scope: input.scope ?? null,
@@ -313,12 +348,12 @@ export function analyzeComparables(
   profile: ComparableProfile = ASSESSOR_PROFILE,
 ): ComparableAnalysis {
   const parcel = caseFile.parcel;
-  let warnings = userSuppliedWarnings(caseFile, profile);
+  let warnings = [...subjectDataWarnings(parcel), ...userSuppliedWarnings(caseFile, profile)];
   let missingDataRate: number | null = null;
 
   if (isCondo(parcel)) {
     const reliability = condoReliability(caseFile, profile);
-    warnings = reliability.warnings;
+    warnings = [...warnings, ...reliability.warnings];
     missingDataRate = reliability.missingRate;
     if (!reliability.shouldRun) {
       return profiledAnalysis({
@@ -338,15 +373,36 @@ export function analyzeComparables(
   const subjectSqft = effectiveSqft(caseFile);
   const subjectPsf = safeDiv(subjectMetric, subjectSqft);
   if (subjectPsf === null || subjectSqft === null || subjectSqft <= 0) {
-    const flags = missingSubjectFlags(caseFile, profile);
-    const fieldText = flags.length > 0 ? flags.join(" and ") : "the documented override fields";
+    const missingFields = missingSubjectFields(caseFile, profile);
+    const fieldText =
+      missingFields.length > 0
+        ? missingFields.map((field) => field.label).join(" and ")
+        : "the documented override fields";
     return profiledAnalysis({
       status: "insufficient_data",
       note: `Missing subject building square footage or ${profile.metricLabel}. Use ${fieldText} if you can document the missing value.`,
       profile,
       warnings,
+      missingFields,
       missingDataRate,
     });
+  }
+
+  const mismatchedYearCount = caseFile.comparables.filter(
+    (comp) =>
+      parcel.assessmentYear !== null &&
+      comp.assessmentYear !== null &&
+      comp.assessmentYear !== parcel.assessmentYear,
+  ).length;
+  if (mismatchedYearCount > 0) {
+    warnings = [
+      ...warnings,
+      `${mismatchedYearCount} comparable candidate${
+        mismatchedYearCount === 1 ? " was" : "s were"
+      } excluded because ${
+        mismatchedYearCount === 1 ? "its" : "their"
+      } assessment year did not match the subject assessment year.`,
+    ];
   }
 
   const candidates = caseFile.comparables.filter((comp) => {
@@ -354,6 +410,7 @@ export function analyzeComparables(
     return (
       comp.pin !== parcel.pin &&
       samePropertyClass(parcel, comp) &&
+      sameAssessmentYear(parcel, comp) &&
       metricValue !== null &&
       metricValue > 0 &&
       comp.buildingSqft !== null &&
@@ -444,6 +501,81 @@ export function assessmentShockPct(caseFile: CaseFile): number | null {
   return (100 * (current - prior)) / prior;
 }
 
+function analyzeLandAssessment(
+  caseFile: CaseFile,
+  comparablePool: ComparableExhibit[],
+): LandAssessmentCheck {
+  const parcel = caseFile.parcel;
+  const subjectLandSqft = positive(parcel.landSqft);
+  const subjectLandPsf = safeDiv(positive(parcel.currentLandAv), subjectLandSqft);
+  if (subjectLandPsf === null || subjectLandSqft === null) {
+    return {
+      status: "insufficient_data",
+      note: "Land-component check skipped because public Land AV or land sqft is missing for the subject.",
+      subjectLandAvPerSqft: null,
+      medianLandAvPerSqft: null,
+      percentile: null,
+      gapPct: null,
+      medianComparableLandSqft: null,
+      poolSize: 0,
+      flagged: false,
+    };
+  }
+
+  const rows = comparablePool
+    .map((item) => {
+      const landSqft = positive(item.comparable.landSqft);
+      const landPsf = safeDiv(positive(item.comparable.landAv), landSqft);
+      return landSqft !== null && landPsf !== null ? { landSqft, landPsf } : null;
+    })
+    .filter((item): item is { landSqft: number; landPsf: number } => item !== null);
+  if (rows.length < 3) {
+    return {
+      status: "insufficient_data",
+      note: `Land-component check skipped because only ${rows.length} comparable parcels had usable Land AV and land sqft.`,
+      subjectLandAvPerSqft: subjectLandPsf,
+      medianLandAvPerSqft: null,
+      percentile: null,
+      gapPct: null,
+      medianComparableLandSqft: null,
+      poolSize: rows.length,
+      flagged: false,
+    };
+  }
+
+  const landPsfValues = rows.map((row) => row.landPsf);
+  const landSqftValues = rows.map((row) => row.landSqft);
+  const medianLandPsf = medianValue(landPsfValues);
+  const medianLandSqft = medianValue(landSqftValues);
+  const percentile = percentileRank(subjectLandPsf, landPsfValues);
+  const gap = gapPct(subjectLandPsf, landPsfValues);
+  const lotSizeGap =
+    medianLandSqft === null ? null : (100 * (subjectLandSqft - medianLandSqft)) / medianLandSqft;
+  const flagged = (percentile ?? 0) >= 75 && (gap ?? 0) >= 10;
+  const lotSizeDifferent = lotSizeGap !== null && Math.abs(lotSizeGap) >= 20;
+  let note = "Land AV/sqft is not unusually high compared with the selected similar homes.";
+  if (flagged) {
+    note =
+      "Land AV/sqft is high compared with selected similar homes. Check land sqft and land assessment details for a possible land or factual-error issue.";
+  } else if (lotSizeDifferent) {
+    note = `Total assessment differences may be partly explained by lot size: the subject lot is ${Math.abs(
+      lotSizeGap,
+    ).toFixed(0)}% ${lotSizeGap > 0 ? "larger" : "smaller"} than the median comparable lot.`;
+  }
+
+  return {
+    status: "ok",
+    note,
+    subjectLandAvPerSqft: subjectLandPsf,
+    medianLandAvPerSqft: medianLandPsf,
+    percentile,
+    gapPct: gap,
+    medianComparableLandSqft: medianLandSqft,
+    poolSize: rows.length,
+    flagged,
+  };
+}
+
 export function buildEvidenceSummary(
   caseFile: CaseFile,
   taxRate: number,
@@ -453,6 +585,7 @@ export function buildEvidenceSummary(
   const parcel = caseFile.parcel;
   const profile = profileForVenue(venue);
   const comparableAnalysis = analyzeComparables(caseFile, 10, profile);
+  const landAssessment = analyzeLandAssessment(caseFile, comparableAnalysis.pool);
   const currentTotalAv = effectiveTotalAv(caseFile);
   const impliedMarket = currentTotalAv !== null ? currentTotalAv / ASSESSMENT_LEVEL : null;
   const args: EvidenceArgument[] = [];
@@ -488,6 +621,17 @@ export function buildEvidenceSummary(
         estimatedSavings: point,
       });
     }
+  }
+
+  if (landAssessment.flagged) {
+    tierPoints += 1;
+    args.push({
+      argumentType: "land_component",
+      strength: "supporting",
+      text: landAssessment.note,
+      targetAv: null,
+      estimatedSavings: null,
+    });
   }
 
   let evidenceValue: number | null = null;
@@ -585,7 +729,7 @@ export function buildEvidenceSummary(
   } else {
     tier = "LIMITED";
     tierMessage =
-      "No public-data appeal evidence was found. Appealing may still be free, but add sale, appraisal, condition, or factual-error evidence before investing significant time.";
+      "Appeal Compass can make mistakes and doesn't check all factors that might lead to a property tax reduction.";
   }
 
   const pointSavings = Math.max(0, ...args.map((argument) => argument.estimatedSavings ?? 0));
@@ -593,6 +737,7 @@ export function buildEvidenceSummary(
     tier,
     tierMessage,
     comparableAnalysis,
+    landAssessment,
     arguments: args,
     impliedMarketValue: impliedMarket,
     savingsAssumptions: {

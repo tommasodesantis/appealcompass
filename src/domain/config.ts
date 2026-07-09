@@ -1,4 +1,4 @@
-import { parseMdyDate } from "./dateUtils";
+import { daysBetween, parseMdyDate } from "./dateUtils";
 import type { Jurisdiction } from "./models";
 
 export const ASSESSMENT_YEAR = 2026;
@@ -9,19 +9,27 @@ export const ASSESSMENT_LEVEL = 0.1;
 export const CCAO_OFFICIAL_URL =
   "https://www.cookcountyassessoril.gov/assessment-calendar-and-deadlines";
 export const CCAO_EXEMPTIONS_URL = "https://www.cookcountyassessoril.gov/exemptions";
+export const CCAO_APPEALS_URL = "https://www.cookcountyassessoril.gov/appeals";
 export const BOR_OFFICIAL_URL = "https://www.cookcountyboardofreview.com/";
 export const BOR_PORTAL_URL = "https://appeals.cookcountyboardofreview.com/";
+export const BOR_PROPERTY_OWNER_GUIDE_URL =
+  "https://www.cookcountyboardofreview.com/portal-guide-property-owners";
+export const BOR_RULES_URL = "https://www.cookcountyboardofreview.com/board-review-official-rules";
+export const BOR_DATES_URL = "https://www.cookcountyboardofreview.com/dates-and-deadlines";
 export const BOR_DATES_PDF_URL =
   "https://www.cookcountyboardofreview.com/sites/g/files/ywwepo261/files/document/file/2025-07/2025TOWNSHIPOPEN-CLOSE.pdf";
 export const COOK_PROPERTY_TAX_PORTAL_URL = "https://www.cookcountypropertyinfo.com/";
 export const PTAB_OFFICIAL_URL = "https://ptab.illinois.gov/";
 export const PTAB_EFILE_URL = "https://ptab.illinois.gov/";
+export const PTAB_RESIDENTIAL_APPEAL_FORM_URL = "https://ptab.illinois.gov/forms.html";
+export const PTAB_RULES_URL =
+  "https://www.ilga.gov/commission/jcar/admincode/086/086019100B00250R.html";
 export const SUPPORTED_JURISDICTIONS: Record<Jurisdiction, string> = {
   cook_county_il: "Cook County, Illinois",
 };
 
 export const NOT_LEGAL_ADVICE =
-  "NOT LEGAL ADVICE. Appeal Compass supports only individual residential homeowners appealing their own home. Entity-owned properties, commercial properties, and association properties are not supported and generally require an attorney.";
+  "NOT LEGAL ADVICE. Users are responsible to verify that the evidence collected via Appeal Compass is correct.";
 
 export type WindowStatus = "upcoming" | "open" | "closed";
 
@@ -32,6 +40,8 @@ export interface FilingWindow {
 }
 
 export interface CalendarConfig {
+  assessmentYear: number;
+  published: boolean;
   venueLabel: string;
   sessionLabel: string;
   sessionEnd: string;
@@ -83,6 +93,8 @@ export function stalenessWarning(config: CalendarConfig, today: string): string 
 }
 
 export const CCAO_CALENDAR: CalendarConfig = {
+  assessmentYear: ASSESSMENT_YEAR,
+  published: true,
   venueLabel: "Cook County Assessor",
   sessionLabel: "Tax Year 2026 Assessor Appeal Windows",
   sessionEnd: parseMdyDate("8/12/2026"),
@@ -133,12 +145,45 @@ export const CCAO_WINDOWS: Record<string, FilingWindow[]> = {
 };
 
 export const BOR_CALENDAR: CalendarConfig = {
+  assessmentYear: 2025,
+  published: false,
   venueLabel: "Cook County Board of Review",
   sessionLabel: "Tax Year 2025 - Cook County Board of Review 2025-26 Session",
   sessionEnd: parseMdyDate("6/3/2026"),
-  sourceUrl: BOR_DATES_PDF_URL,
-  sourceNote: "BOR 2025 township date PDF linked from the official Board of Review site.",
+  sourceUrl: BOR_DATES_URL,
+  sourceNote:
+    "The official Board of Review dates page still lists the 2025 tax-year schedule. Tax Year 2026 township filing dates have not been published.",
 };
+
+export const ILLINOIS_STATE_HOLIDAYS = new Set([
+  "2026-01-01",
+  "2026-01-19",
+  "2026-02-12",
+  "2026-02-16",
+  "2026-05-25",
+  "2026-06-19",
+  "2026-07-03",
+  "2026-09-07",
+  "2026-10-12",
+  "2026-11-03",
+  "2026-11-11",
+  "2026-11-26",
+  "2026-11-27",
+  "2026-12-25",
+  "2027-01-01",
+  "2027-01-18",
+  "2027-02-12",
+  "2027-02-15",
+  "2027-05-31",
+  "2027-06-18",
+  "2027-07-05",
+  "2027-09-06",
+  "2027-10-11",
+  "2027-11-11",
+  "2027-11-25",
+  "2027-11-26",
+  "2027-12-24",
+]);
 
 export const BOR_GROUPS: Record<string, BorGroup> = {
   "1": {
@@ -211,6 +256,9 @@ export function canonicalTownship(name: string): string {
 }
 
 export function borWindowsForTownship(townshipName: string): FilingWindow[] {
+  if (!BOR_CALENDAR.published || BOR_CALENDAR.assessmentYear !== ASSESSMENT_YEAR) {
+    return [];
+  }
   const township = canonicalTownship(townshipName);
   const group = TOWNSHIP_TO_BOR_GROUP[township];
   if (!group) {
@@ -222,5 +270,3 @@ export function borWindowsForTownship(townshipName: string): FilingWindow[] {
 export function ccaoWindowsForTownship(townshipName: string): FilingWindow[] {
   return [...(CCAO_WINDOWS[canonicalTownship(townshipName)] ?? [])];
 }
-
-import { daysBetween } from "./dateUtils";
