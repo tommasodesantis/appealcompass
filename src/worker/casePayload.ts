@@ -45,13 +45,32 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function positiveNumber(params: URLSearchParams, name: string): number | null {
-  const value = params.get(name);
+function positiveNumber(params: URLSearchParams, name: string, label = name): number | null {
+  const value = (params.get(name) ?? "").trim();
   if (!value) {
     return null;
   }
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new UserInputError(`Enter a positive number for ${label}.`);
+  }
+  return parsed;
+}
+
+function optionalIsoDate(params: URLSearchParams, name: string, label: string): string | null {
+  const value = (params.get(name) ?? "").trim();
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
+    throw new UserInputError(`Enter a valid date for ${label}.`);
+  }
+  return value;
 }
 
 function requiredChoice<T extends string>(
@@ -99,37 +118,46 @@ function userEvidenceFromParams(params: URLSearchParams, requestedVenue: Venue):
   let borNoticeReceived: boolean | null = null;
   let borNoticeDate: string | null = null;
   if (requestedVenue === "ptab") {
-    const noticeParam = params.has("borNoticeReceived")
-      ? "borNoticeReceived"
-      : "borDecisionReceived";
     borNoticeReceived = requiredBoolean(
       params,
-      noticeParam,
+      "borNoticeReceived",
       "whether you received the written Board of Review decision notice",
     );
     if (borNoticeReceived) {
-      borNoticeDate = (params.get("borNoticeDate") ?? params.get("borDecisionDate") ?? "").trim();
+      borNoticeDate = optionalIsoDate(
+        params,
+        "borNoticeDate",
+        "the written Board of Review decision notice",
+      );
       if (!borNoticeDate) {
         throw new UserInputError("Enter the date on the written Board of Review decision notice.");
       }
     }
   }
+  const purchasePrice = positiveNumber(params, "purchasePrice", "purchase price");
+  const purchaseDate = optionalIsoDate(params, "purchaseDate", "purchase date");
+  const appraisalValue = positiveNumber(params, "appraisalValue", "appraisal value");
+  const appraisalDate = optionalIsoDate(params, "appraisalDate", "appraisal date");
+  if ((purchasePrice === null) !== (purchaseDate === null)) {
+    throw new UserInputError("Enter both the subject-property purchase price and purchase date.");
+  }
+  if ((appraisalValue === null) !== (appraisalDate === null)) {
+    throw new UserInputError("Enter both the appraisal value and appraisal date.");
+  }
+  if (purchasePrice !== null && appraisalValue !== null) {
+    throw new UserInputError("Enter either a purchase or an appraisal, not both.");
+  }
   return defaultUserEvidence({
-    purchasePrice: positiveNumber(params, "purchasePrice"),
-    purchaseDate: params.get("purchaseDate"),
-    appraisalValue: positiveNumber(params, "appraisalValue"),
-    appraisalDate: params.get("appraisalDate"),
+    purchasePrice,
+    purchaseDate,
+    appraisalValue,
+    appraisalDate,
     ownershipType,
-    assessorAppealFiled: null,
-    assessorDecisionReceived: null,
-    borAppealFiled: null,
-    borDecisionReceived: borNoticeReceived,
-    borDecisionDate: borNoticeDate,
     borNoticeReceived,
     borNoticeDate,
-    actualSqft: positiveNumber(params, "actualSqft"),
-    actualAv: positiveNumber(params, "actualAv"),
-    actualImprovementAv: positiveNumber(params, "actualImprovementAv"),
+    actualSqft: positiveNumber(params, "actualSqft", "documented building sqft"),
+    actualAv: positiveNumber(params, "actualAv", "documented Total AV"),
+    actualImprovementAv: positiveNumber(params, "actualImprovementAv", "documented Improvement AV"),
   });
 }
 
@@ -187,7 +215,6 @@ export async function buildCasePayload(
     caseFile.parcel.townshipName,
     today,
     requestedVenue,
-    userEvidence.borNoticeDate,
     appealStatusFromEvidence(userEvidence),
   );
   const evidence = buildEvidenceSummary(

@@ -1,4 +1,5 @@
 import { defaultUserEvidence } from "./models";
+import type { AssessmentStage, AssessmentStages } from "./models";
 import { formatPin, normalizePin } from "./pin";
 import type {
   AssessmentHistoryRow,
@@ -43,6 +44,33 @@ function intValue(value: unknown): number | null {
   return parsed === null ? null : Math.trunc(parsed);
 }
 
+function booleanValue(value: unknown, fallback: boolean): boolean {
+  if (value === true || value === "true" || value === 1 || value === "1") {
+    return true;
+  }
+  if (value === false || value === "false" || value === 0 || value === "0") {
+    return false;
+  }
+  return fallback;
+}
+
+function assessmentStage(value: unknown): AssessmentStage {
+  return value === "board" || value === "certified" || value === "mailed" ? value : null;
+}
+
+function assessmentStages(value: unknown): AssessmentStages {
+  const stages = record(value);
+  return {
+    total: assessmentStage(stages.total),
+    improvement: assessmentStage(stages.improvement),
+    land: assessmentStage(stages.land),
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  return array(value).map(String).filter(Boolean);
+}
+
 export function parcelFromJson(raw: JsonRecord): Parcel {
   const pin = normalizePin(stringValue(raw.pin));
   return {
@@ -70,6 +98,12 @@ export function parcelFromJson(raw: JsonRecord): Parcel {
     currentImprovementAv: numberValue(raw.current_improvement_av),
     currentLandAv: numberValue(raw.current_land_av ?? raw.land_av),
     priorFinalAv: numberValue(raw.prior_final_av),
+    assessmentStages: assessmentStages(raw.assessment_stages),
+    assessmentComponentsReconciled: booleanValue(raw.assessment_components_reconciled, true),
+    isMulticard: booleanValue(raw.is_multicard, (intValue(raw.card_count) ?? 1) > 1),
+    cardCount: Math.max(1, intValue(raw.card_count) ?? 1),
+    cardClasses: stringArray(raw.card_classes),
+    characteristicsReconciled: booleanValue(raw.characteristics_reconciled, true),
   };
 }
 
@@ -94,6 +128,12 @@ export function comparableFromJson(raw: JsonRecord): Comparable {
     neighborhood: nullableString(raw.neighborhood),
     lat: numberValue(raw.lat),
     lon: numberValue(raw.lon),
+    assessmentStages: assessmentStages(raw.assessment_stages),
+    assessmentComponentsReconciled: booleanValue(raw.assessment_components_reconciled, true),
+    isMulticard: booleanValue(raw.is_multicard, (intValue(raw.card_count) ?? 1) > 1),
+    cardCount: Math.max(1, intValue(raw.card_count) ?? 1),
+    cardClasses: stringArray(raw.card_classes),
+    characteristicsReconciled: booleanValue(raw.characteristics_reconciled, true),
   };
 }
 

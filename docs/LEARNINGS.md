@@ -111,14 +111,16 @@ tests, and user-facing copy.
 - The Clerk tax-code rate lookup is sourced from the Cook County Clerk 2024 Tax Code Agency Rate
   file and uses the composite `CodeRate24` value converted to a decimal tax rate. It is labeled
   approximate wherever it appears.
+- A full-row audit on 2026-07-10 compared all 4,508 committed tax-code rates with the official Clerk
+  workbook and found no differences. Tax code `35011` is `0.09585675`, displayed as `9.5857%`.
 - If the parcel tax code is missing or absent from the lookup, estimated savings fall back to
   `DEFAULT_TAX_RATE` and must label the fallback as a county default assumption.
 - The UI, print packet, and workbook must show the equalizer and the tax-rate source next to the
   estimated savings range.
 - The print packet is intentionally narrow: tool name, disclaimer, produced date, subject
-  specifications, deadline status, consolidated data notes, comparable method, selected comparable
-  table, and analysis/savings results. Filing checklists and exemption guidance stay out of the
-  packet.
+  specifications, consolidated data notes, plain-language comparable method, a user-capped
+  comparable table, and analysis/savings results. Homeowner-facing deadline status, filing
+  checklists, and exemption guidance stay out of the jurisdiction-facing packet.
 - The XLSX workbook has two comparable worksheets: the similarity-filtered selected pool and the
   full selected similar-home pool, both using the same comparable column set and subject comparison.
 - The browser stores only the last successful in-tab assessment query and payload in
@@ -151,31 +153,34 @@ tests, and user-facing copy.
   notice date, include day 30, and move a weekend or Illinois legal-holiday expiration to the next
   business day. The result must explain that Cook County's later township-transmission date may
   control and cannot be observed by this tool.
-- Estimated savings are rough ranges only. Display the equalizer and tax-rate assumptions next to
-  the range.
+- Estimated savings are ranges, not promises. Display the equalizer and tax-rate assumptions next
+  to the range, and show an explicit unavailable state when no actionable reduction amount exists.
 - User-supplied values must be labeled as user-supplied, never as official county data.
 
-## Sale Recency Rule
+## Sale and Appraisal Recency Rules
 
-- Recorded sales and user-reported purchases may drive an overvaluation argument only when the
-  sale date is within three years before the January 1 lien date for `ASSESSMENT_YEAR`.
-- This matches Cook County Board of Review Rule 18, which requires disclosure and sale documents
-  when a purchase took place within three years of the lien date:
+- Value evidence is anchored to January 1 of the subject's selected assessment year, not a global
+  hard-coded date. The Assessor screen uses a two-year purchase/appraisal window. The BOR screen
+  uses its published three-year purchase window and the same conservative screen for appraisals.
+- Cook County Board of Review Rule 18 requires disclosure and sale documents when a purchase took
+  place within three years of the lien date:
   https://www.cookcountyboardofreview.com/board-review-official-rules
-- It is also consistent with the Cook County Assessor's public valuation explanation that
-  residential assessments are as of January 1 and use three to five years of prior sales to
-  stabilize market-value estimates:
-  https://www.cookcountyassessoril.gov/how-properties-are-valued
-- PTAB filing instructions recognize Recent Sale, Comparable Sales, and Recent Appraisal as
-  evidence categories and require closing documents for a Recent Sale:
-  https://ptab.illinois.gov/filing.html
+- PTAB asks for sale or appraisal evidence as close as possible to January 1 rather than publishing
+  the same fixed cutoff. The app uses a conservative three-year PTAB screen and labels it as a
+  screening rule, not a PTAB deadline or guarantee of admissibility.
 - Implementation note: stale sales may be shown as informational context, but must not create an
   overvaluation argument or estimated savings. PTAB deadlines remain unrelated and are computed
   only from the user-supplied date on the written BOR decision notice, with the Cook County
   township-transmission caveat shown separately.
-- Phase 6 implementation: `buildEvidenceSummary` filters recorded sales and user-reported
-  purchases through this rule before assigning an overvaluation target or estimated savings.
-  Appraisals remain labeled by date; no deterministic official appraisal-age window was identified.
+- `buildEvidenceSummary` applies the assessment-year and venue policy to subject recorded sales,
+  user-reported purchases, and user-reported appraisals before assigning an overvaluation target or
+  estimated savings. A qualifying user entry takes precedence over a qualifying recorded sale.
+- Comparable sale fields are display context rather than the basis of the Improvement AV/sqft
+  uniformity analysis. The UI can show all assessment comparables, recent three-year sales, or all
+  rows with a recorded sale. Older sales are labeled context only.
+- A positive implied-value gap must be at least 5% to create an overvaluation argument, affect the
+  evidence level, or produce a savings estimate. Smaller gaps remain visible with the formula and
+  are labeled context only.
 
 ## Assessment Queueing
 
@@ -191,10 +196,17 @@ tests, and user-facing copy.
 
 ## Reporting
 
-- Problem reporting and contact forms have a configured public Turnstile site key but remain
-  unavailable until their deployment secrets are configured. Server-side secrets are
+- Problem reports and feature requests share one feedback form. Commercial-property interest keeps
+  a separate contact form. Both have a configured public Turnstile site key but remain unavailable
+  until their deployment secrets are configured. Server-side secrets are
   `TURNSTILE_SECRET_KEY`, `GITHUB_ISSUES_TOKEN`, and `RESEND_API_KEY`; the public
   `TURNSTILE_SITE_KEY` is in `src/domain/publicConfig.ts`.
 - The Turnstile secret, GitHub token, and Resend API key must never be committed or sent to the
   browser. The reporting and contact endpoints strip HTML from submitted text and exclude
   Turnstile tokens from outbound GitHub issue bodies or Resend emails.
+- Server validation requires the Turnstile action to match `feedback` or `commercial_interest`.
+  Feedback issue creation verifies that `GITHUB_ISSUES_TOKEN` belongs to `tdsdesa-bot` and refuses
+  to post under another account.
+- Cloudflare Rate Limiting bindings enforce a shared per-IP 10-per-minute case/print limit and a
+  shared per-IP 2-per-minute feedback/contact limit. The in-process assessment concurrency and
+  queue controls remain separate safeguards for upstream Socrata pressure.

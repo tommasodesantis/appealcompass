@@ -35,3 +35,28 @@ test("does not repeat calendar staleness as a data note", () => {
   ]);
   expect(notices).toEqual([]);
 });
+
+test("turns distant-comparable and large-savings warnings into named notices", () => {
+  const notices = buildDataNotices([
+    "Every comparable driving the calculation is more than 3 km from the subject. Verify locations.",
+    "The screening savings estimate is unusually large at 26% of the estimated tax attributable to current AV. Verify every input.",
+  ]);
+
+  expect(notices.map((notice) => notice.code)).toEqual([
+    "distant_comparable_pool",
+    "large_savings_estimate",
+  ]);
+});
+
+test("groups multicard aggregation and candidate exclusions", () => {
+  const notices = buildDataNotices([
+    "This parcel has 2 residential property cards. Building sqft and improvement details were combined across all cards before comparison.",
+    "7 comparable candidates were excluded because public property-card or assessment components could not be reconciled.",
+    "475 comparable candidates were excluded because their residential property-card count did not match the subject.",
+  ]);
+
+  expect(notices.map((notice) => notice.code)).toEqual([
+    "multicard_aggregation",
+    "comparable_card_exclusions",
+  ]);
+});

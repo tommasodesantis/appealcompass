@@ -1,6 +1,14 @@
 import { assessmentTypeLabel } from "../domain/comparableDisplay";
+import { profileForVenue } from "../domain/comparableProfiles";
+import {
+  type ComparableSaleFilter,
+  filterByComparableSale,
+  isRecentSaleDate,
+} from "../domain/comparableSaleFilter";
 import { ASSESSMENT_LEVEL, NOT_LEGAL_ADVICE } from "../domain/config";
 import type { Parcel } from "../domain/models";
+import { DEFAULT_PRINT_COMPARABLE_LIMIT, type PrintComparableLimit } from "../domain/printOptions";
+import { formatPropertyClass } from "../domain/propertyClasses";
 import { filterBySimilarity } from "../domain/similarityBands";
 import type { CasePayload } from "./casePayload";
 
@@ -29,6 +37,10 @@ function numberText(value: number | null, digits = 0): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
+function yearText(value: number | null): string {
+  return value === null || Number.isNaN(value) ? "Not available" : String(Math.trunc(value));
+}
+
 function percentText(value: number | null, digits = 0): string {
   return value === null || Number.isNaN(value) ? "Not available" : `${numberText(value, digits)}%`;
 }
@@ -44,6 +56,9 @@ function githubHeaderLink(): string {
 }
 
 function knownParcelAddress(parcel: Parcel): string | null {
+  if (!parcel.address.trim()) {
+    return null;
+  }
   const cityZip = [parcel.city.trim(), parcel.zipCode.trim()].filter(Boolean).join(" ");
   const pieces = [parcel.address.trim(), cityZip].filter(Boolean);
   return pieces.length > 0 ? pieces.join(", ") : null;
@@ -73,7 +88,7 @@ function subjectValues(payload: CasePayload): string {
   const rows = [
     ["PIN", parcel.pinFormatted],
     ["Selected venue", payload.venue.name],
-    ["Property class", parcel.propertyClass],
+    ["Property class", formatPropertyClass(parcel.propertyClass)],
     ["Township", parcel.townshipName],
     ["Neighborhood", parcel.neighborhood ?? "Not available"],
     [
@@ -85,8 +100,8 @@ function subjectValues(payload: CasePayload): string {
           : "Missing",
     ],
     ["Land sqft", numberText(parcel.landSqft)],
-    ["Year built", numberText(parcel.yearBuilt)],
-    ["Assessment year", numberText(parcel.assessmentYear)],
+    ["Year built", yearText(parcel.yearBuilt)],
+    ["Assessment year", yearText(parcel.assessmentYear)],
     [
       "Current total assessed value",
       parcel.currentAv
@@ -108,6 +123,11 @@ function subjectValues(payload: CasePayload): string {
   const address = knownParcelAddress(parcel);
   if (address) {
     rows.splice(1, 0, ["Address", address]);
+  } else {
+    const location = [parcel.city.trim(), parcel.zipCode.trim()].filter(Boolean).join(" ");
+    if (location) {
+      rows.splice(1, 0, [parcel.city.trim() ? "City / ZIP" : "ZIP code", location]);
+    }
   }
   if (effectiveAv) {
     rows.push(["Implied market value", dollars(effectiveAv / ASSESSMENT_LEVEL)]);
@@ -117,15 +137,24 @@ function subjectValues(payload: CasePayload): string {
     .join("")}</dl>`;
 }
 
-function comparablesTable(payload: CasePayload, maxSimilarity: number | null): string {
+function comparablesTable(
+  payload: CasePayload,
+  maxSimilarity: number | null,
+  saleFilter: ComparableSaleFilter,
+  maxComps: PrintComparableLimit,
+): string {
   const comps = payload.evidence.comparableAnalysis;
-  const selectedPool = filterBySimilarity(comps.pool, maxSimilarity);
+  const selectedPool = filterByComparableSale(
+    filterBySimilarity(comps.pool, maxSimilarity),
+    saleFilter,
+    payload.case.parcel.assessmentYear,
+  ).slice(0, maxComps);
   if (selectedPool.length === 0) {
     return `<p>${escapeHtml(comps.note)}</p>`;
   }
   const assessmentType = assessmentTypeLabel(comps.profileKey);
   return `<table>
-    <caption>${selectedPool.length} selected comparable ${selectedPool.length === 1 ? "home" : "homes"}; higher-assessed rows are included for transparency.</caption>
+    <caption>${selectedPool.length} comparable ${selectedPool.length === 1 ? "home" : "homes"} included</caption>
     <thead><tr><th>PIN</th><th>Distance km</th><th>Neighborhood</th><th>Property class</th><th>Building sqft</th><th>Year built</th><th>Sale date</th><th>Sale price</th><th>Assessment metric</th><th>Improvement AV/sqft</th><th>Compared with subject</th><th>Similarity score</th></tr></thead>
     <tbody>
       ${selectedPool
@@ -134,19 +163,23 @@ function comparablesTable(payload: CasePayload, maxSimilarity: number | null): s
             comps.subjectAvPerSqft && comps.subjectAvPerSqft > 0
               ? ((item.avPerSqft - comps.subjectAvPerSqft) / comps.subjectAvPerSqft) * 100
               : null;
+          const staleSale =
+            item.comparable.saleDate !== null &&
+            !isRecentSaleDate(item.comparable.saleDate, payload.case.parcel.assessmentYear);
+          const broadContext = item.similarity > comps.maxActionableSimilarity;
           return `<tr>
             <td>${escapeHtml(item.comparable.pinFormatted)}</td>
             <td>${item.distanceKm === null ? "Not available" : numberText(item.distanceKm, 2)}</td>
             <td>${escapeHtml(item.comparable.neighborhood ?? "Not available")}</td>
-            <td>${escapeHtml(item.comparable.propertyClass ?? "Not available")}</td>
+            <td>${escapeHtml(formatPropertyClass(item.comparable.propertyClass) || "Not available")}</td>
             <td>${numberText(item.comparable.buildingSqft)}</td>
-            <td>${escapeHtml(item.comparable.yearBuilt ?? "Not available")}</td>
-            <td>${escapeHtml(item.comparable.saleDate ?? "Not available")}</td>
-            <td>${dollars(item.comparable.salePrice)}</td>
+            <td>${yearText(item.comparable.yearBuilt)}</td>
+            <td>${escapeHtml(item.comparable.saleDate ?? "Not available")}${staleSale ? " (older sale; context only)" : ""}</td>
+            <td>${dollars(item.comparable.salePrice)}${staleSale ? " (context only)" : ""}</td>
             <td>${escapeHtml(assessmentType)}</td>
             <td>${dollars(item.avPerSqft)}</td>
             <td>${difference === null ? "Not available" : `${percentText(Math.abs(difference), 1)} ${difference < 0 ? "lower" : "higher"}`}</td>
-            <td>${numberText(item.similarity, 3)}</td>
+            <td>${numberText(item.similarity, 3)}${broadContext ? " (broader match; context only)" : ""}</td>
           </tr>`;
         })
         .join("")}
@@ -154,23 +187,55 @@ function comparablesTable(payload: CasePayload, maxSimilarity: number | null): s
   </table>`;
 }
 
-function methodDescription(payload: CasePayload): string {
+function methodDescription(
+  payload: CasePayload,
+  saleFilter: ComparableSaleFilter,
+  maxComps: PrintComparableLimit,
+): string {
   const comps = payload.evidence.comparableAnalysis;
-  return `<p>Appeal Compass used the ${escapeHtml(
-    comps.profileLabel,
-  )} comparable profile and compared ${escapeHtml(
+  const profile = profileForVenue(payload.routing.venue);
+  const steps = profile.similaritySteps
+    .map(
+      (step) =>
+        `±${Math.round(step.sqftTolerance * 100)}% building size and ±${step.yearTolerance} years built`,
+    )
+    .join(", then ");
+  const expansion =
+    profile.similaritySteps.length > 1
+      ? `It starts at ${steps} until it has enough suitable homes.`
+      : `It requires ${steps}.`;
+  const extraRequirements =
+    profile.key === "ptab"
+      ? " PTAB matching also requires lot size within ±50%, usable style and amenity data, and the same recorded style when the subject style is known."
+      : "";
+  const saleFilterText =
+    saleFilter === "recent"
+      ? "recent three-year sales"
+      : saleFilter === "recorded"
+        ? "homes with a recorded sale"
+        : "all assessment comparables";
+  return `<p>Appeal Compass compared the subject with same-class, same-township public records using ${escapeHtml(
     comps.metricLabel,
-  )} per square foot. The method starts from same-class, same-township public records, applies the active profile's building-size and year-built matching rules, prefers same-neighborhood rows when enough are available, and uses the ${escapeHtml(
+  )} per building square foot and the same assessment year. ${escapeHtml(
+    expansion,
+  )}${escapeHtml(extraRequirements)} If at least ${profile.preferSameNeighborhoodMinimum} same-neighborhood homes are available, the method uses those; otherwise it uses township matches. This case used the ${escapeHtml(
     comps.scope ?? "available",
-  )} scope for this case. The table shows all selected rows, including homes assessed above the subject, and sorts them by similarity score, where lower means more similar.</p>`;
+  )} scope. Rows are ordered by a similarity score weighted 50% for building size, 30% for age, and 20% for distance; lower means more similar. Rows are not prefiltered by whether they help or hurt a reduction request. The sale display is ${escapeHtml(
+    saleFilterText,
+  )}; it does not recalculate the assessment analysis. Only rows at or below the ${numberText(
+    comps.maxActionableSimilarity,
+    2,
+  )} similarity guardrail drive the median, evidence level, target assessment, or savings; broader rows are context only. The table includes at most ${maxComps} homes.</p>`;
 }
 
 function analysisResults(payload: CasePayload): string {
   const comps = payload.evidence.comparableAnalysis;
   const land = payload.evidence.landAssessment;
   const savings = payload.evidence.savingsAssumptions;
+  const valueEvidence = payload.evidence.valueEvidence;
   return `<dl class="packet-dl">
     <div><dt>Comparable pool size</dt><dd>${numberText(comps.poolSize)}</dd></div>
+    <div><dt>Homes driving calculation</dt><dd>${numberText(comps.actionablePoolSize)}</dd></div>
     <div><dt>Subject ${escapeHtml(comps.metricLabel)}/sqft</dt><dd>${dollars(comps.subjectAvPerSqft)}</dd></div>
     <div><dt>Median comparable ${escapeHtml(comps.metricLabel)}/sqft</dt><dd>${dollars(comps.medianAvPerSqft)}</dd></div>
     <div><dt>Subject percentile</dt><dd>${percentText(comps.percentile)}</dd></div>
@@ -178,23 +243,12 @@ function analysisResults(payload: CasePayload): string {
     <div><dt>Land-component check</dt><dd>${escapeHtml(land.note)}</dd></div>
     <div><dt>Subject Land AV/sqft</dt><dd>${dollars(land.subjectLandAvPerSqft)}</dd></div>
     <div><dt>Median comparable Land AV/sqft</dt><dd>${dollars(land.medianLandAvPerSqft)}</dd></div>
-    <div><dt>Estimated savings range</dt><dd>${dollars(savings.low)} to ${dollars(savings.high)} (point estimate ${dollars(savings.point)})</dd></div>
+    <div><dt>Sale or appraisal evidence</dt><dd>${escapeHtml(valueEvidence.sourceLabel ?? "Not available")}</dd></div>
+    <div><dt>Implied-value comparison</dt><dd>${valueEvidence.gapPct === null ? "Not available" : `${percentText(Math.abs(valueEvidence.gapPct), 1)} ${valueEvidence.gapPct >= 0 ? "above" : "below"}`} — ${escapeHtml(valueEvidence.explanation)}</dd></div>
+    <div><dt>Savings estimate</dt><dd>${savings.point > 0 ? `${dollars(savings.low)} to ${dollars(savings.high)} (point estimate ${dollars(savings.point)})` : "Unavailable — no actionable public-data reduction amount passed the evidence checks."}</dd></div>
     <div><dt>Equalizer assumption</dt><dd>${escapeHtml(savings.stateEqualizer)}</dd></div>
     <div><dt>Tax-rate assumption</dt><dd>${escapeHtml(savings.taxRateSource)}</dd></div>
   </dl>`;
-}
-
-function deadlineSummary(payload: CasePayload): string {
-  const route = payload.routing;
-  const dates = route.deadlines.length
-    ? `<dl class="packet-dl">${route.deadlines
-        .map(
-          (item) =>
-            `<div><dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(item.date)}</dd></div>`,
-        )
-        .join("")}</dl>`
-    : `<p><strong>${escapeHtml(route.deadlineLabel)}</strong></p>`;
-  return `<p>${escapeHtml(route.headline)}</p>${dates}<p>Verify dates at <a href="${escapeHtml(route.officialUrl ?? payload.venue.rulesUrl)}">the official source</a>.</p>`;
 }
 
 function dataNotes(payload: CasePayload): string {
@@ -211,20 +265,25 @@ function dataNotes(payload: CasePayload): string {
     .join("")}</ul>`;
 }
 
-export function buildPrintReport(
-  payload: CasePayload,
-  maxSimilarity: number | null = null,
-): string {
+export interface PrintReportOptions {
+  maxSimilarity?: number | null;
+  saleFilter?: ComparableSaleFilter;
+  maxComps?: PrintComparableLimit;
+}
+
+export function buildPrintReport(payload: CasePayload, options: PrintReportOptions = {}): string {
   const comps = payload.evidence.comparableAnalysis;
+  const maxSimilarity = options.maxSimilarity ?? null;
+  const saleFilter = options.saleFilter ?? "all";
+  const maxComps = options.maxComps ?? DEFAULT_PRINT_COMPARABLE_LIMIT;
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Appeal Compass - ${escapeHtml(payload.venue.name)} - ${escapeHtml(payload.case.parcel.pinFormatted)}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,650;12..96,800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://api.fontshare.com">
+    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&amp;f[]=switzer@400,500,600,700&amp;display=swap" rel="stylesheet">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css">
   </head>
@@ -248,23 +307,18 @@ export function buildPrintReport(
       </section>
 
       <section class="packet-section">
-        <h2>Deadline status</h2>
-        ${deadlineSummary(payload)}
-      </section>
-
-      <section class="packet-section">
         <h2>Data notes</h2>
         ${dataNotes(payload)}
       </section>
 
       <section class="packet-section">
         <h2>Comparable method</h2>
-        ${methodDescription(payload)}
+        ${methodDescription(payload, saleFilter, maxComps)}
       </section>
 
       <section class="packet-section">
         <h2>Comparable table</h2>
-        ${comparablesTable(payload, maxSimilarity)}
+        ${comparablesTable(payload, maxSimilarity, saleFilter, maxComps)}
       </section>
 
       <section class="packet-section">

@@ -1,4 +1,5 @@
 import { assessmentTypeLabel } from "../domain/comparableDisplay";
+import { formatPropertyClass } from "../domain/propertyClasses";
 import { filterBySimilarity } from "../domain/similarityBands";
 
 type CellValue = string | number | null;
@@ -67,6 +68,7 @@ interface WorkbookPayload {
       profileKey: string;
       metricLabel: string;
       poolSize: number;
+      actionablePoolSize: number;
       subjectAvPerSqft: number | null;
       medianAvPerSqft: number | null;
       percentile: number | null;
@@ -221,7 +223,7 @@ function comparableRows(
     item.comparable.pinFormatted,
     item.distanceKm,
     item.comparable.neighborhood,
-    item.comparable.propertyClass,
+    formatPropertyClass(item.comparable.propertyClass),
     item.comparable.buildingSqft,
     item.comparable.yearBuilt,
     item.comparable.saleDate,
@@ -246,7 +248,7 @@ function rowsForPayload(payload: WorkbookPayload, maxSimilarity: number | null):
   return [
     [{ value: "Subject Property Summary", style: 1 }],
     ["PIN", parcel.pinFormatted],
-    ["Class / Township", `${parcel.propertyClass} / ${parcel.townshipName}`],
+    ["Class / Township", `${formatPropertyClass(parcel.propertyClass)} / ${parcel.townshipName}`],
     ["Assessment year", parcel.assessmentYear],
     ["Building Sqft", parcel.buildingSqft ?? userEvidence.actualSqft],
     [
@@ -286,6 +288,7 @@ function rowsForPayload(payload: WorkbookPayload, maxSimilarity: number | null):
     [],
     [{ value: "Analysis Stats", style: 1 }],
     ["Pool size", comps.poolSize],
+    ["Homes driving calculation", comps.actionablePoolSize],
     ["Median Improvement AV/sqft", comps.medianAvPerSqft],
     ["Percentile", comps.percentile],
     ["Gap %", comps.gapPct],

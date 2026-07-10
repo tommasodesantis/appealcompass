@@ -226,6 +226,213 @@ test("SocrataRepository enriches live comparables without address placeholders",
   expect(client.comparableSalesQueries).toBe(1);
 });
 
+class MulticardClient {
+  async fetchAll(datasetKey: string, params: Record<string, string>): Promise<SocrataResponse> {
+    const where = params.$where ?? "";
+    const subjectPin = "14314140380000";
+    const compPin = "14314140390000";
+    if (datasetKey === "parcel_universe" && where.includes(`pin='${subjectPin}'`)) {
+      return {
+        rows: [
+          {
+            pin: subjectPin,
+            class: "211",
+            township_name: "West Chicago",
+            township_code: "77",
+            nbhd_code: "77150",
+            year: "2026",
+            lat: "41.91",
+            lon: "-87.67",
+          },
+        ],
+        warnings: [],
+      };
+    }
+    if (datasetKey === "res_characteristics" && where.includes(`pin='${subjectPin}'`)) {
+      return {
+        rows: [
+          {
+            pin: subjectPin,
+            card: "1",
+            row_id: "subject-1",
+            pin_is_multicard: "true",
+            pin_num_cards: "2",
+            class: "211",
+            township_code: "77",
+            year: "2026",
+            char_bldg_sf: "3390",
+            char_land_sf: "3000",
+            char_yrblt: "1892",
+            char_beds: "3",
+            char_fbath: "2",
+          },
+          {
+            pin: subjectPin,
+            card: "2",
+            row_id: "subject-2",
+            pin_is_multicard: "true",
+            pin_num_cards: "2",
+            class: "203",
+            township_code: "77",
+            year: "2026",
+            char_bldg_sf: "1006",
+            char_land_sf: "3000",
+            char_yrblt: "1892",
+            char_beds: "1",
+            char_fbath: "1",
+          },
+        ],
+        warnings: [],
+      };
+    }
+    if (datasetKey === "assessed_values" && where.includes(`pin='${subjectPin}'`)) {
+      return {
+        rows: [
+          {
+            pin: subjectPin,
+            year: "2024",
+            certified_tot: "120000",
+            certified_bldg: "95000",
+            certified_land: "25000",
+          },
+          {
+            pin: subjectPin,
+            year: "2025",
+            mailed_tot: "135518",
+            mailed_bldg: "109418",
+            mailed_land: "26100",
+            certified_tot: "135518",
+            certified_bldg: "109418",
+            certified_land: "26100",
+            board_tot: "124432",
+            board_bldg: "98332",
+            board_land: "26100",
+          },
+        ],
+        warnings: [],
+      };
+    }
+    if (datasetKey === "parcel_sales" && where.includes(`pin='${subjectPin}'`)) {
+      return { rows: [], warnings: [] };
+    }
+    if (datasetKey === "res_characteristics" && where.includes("pin in(")) {
+      return {
+        rows: [
+          {
+            pin: compPin,
+            card: "1",
+            row_id: "comp-1",
+            pin_is_multicard: "true",
+            pin_num_cards: "2",
+            class: "211",
+            township_code: "77",
+            year: "2026",
+            char_bldg_sf: "3000",
+            char_land_sf: "3100",
+            char_yrblt: "1895",
+          },
+          {
+            pin: compPin,
+            card: "2",
+            row_id: "comp-2",
+            pin_is_multicard: "true",
+            pin_num_cards: "2",
+            class: "203",
+            township_code: "77",
+            year: "2026",
+            char_bldg_sf: "1100",
+            char_land_sf: "3100",
+            char_yrblt: "1900",
+          },
+        ],
+        warnings: [],
+      };
+    }
+    if (datasetKey === "res_characteristics") {
+      return {
+        rows: [
+          {
+            pin: compPin,
+            card: "1",
+            row_id: "comp-1",
+            pin_is_multicard: "true",
+            pin_num_cards: "2",
+            class: "211",
+            township_code: "77",
+            year: "2026",
+            char_bldg_sf: "3000",
+            char_land_sf: "3100",
+            char_yrblt: "1895",
+          },
+        ],
+        warnings: [],
+      };
+    }
+    if (datasetKey === "assessed_values") {
+      return {
+        rows: [
+          {
+            pin: compPin,
+            year: "2025",
+            board_tot: "100000",
+            board_bldg: "75000",
+            board_land: "25000",
+          },
+        ],
+        warnings: [],
+      };
+    }
+    if (datasetKey === "parcel_universe") {
+      return {
+        rows: [
+          {
+            pin: compPin,
+            class: "211",
+            township_name: "West Chicago",
+            township_code: "77",
+            nbhd_code: "77150",
+            year: "2026",
+            lat: "41.911",
+            lon: "-87.671",
+          },
+        ],
+        warnings: [],
+      };
+    }
+    if (datasetKey === "parcel_sales") {
+      return { rows: [], warnings: [] };
+    }
+    throw new Error(`Unexpected query ${datasetKey}: ${where}`);
+  }
+}
+
+test("SocrataRepository aggregates every residential card before calculating parcel metrics", async () => {
+  const repo = new SocrataRepository(new MulticardClient() as never);
+  const caseFile = await repo.loadCaseByPin("14-31-414-038-0000");
+
+  expect(caseFile.parcel.buildingSqft).toBe(4396);
+  expect(caseFile.parcel.landSqft).toBe(3000);
+  expect(caseFile.parcel.beds).toBe(4);
+  expect(caseFile.parcel.fullBaths).toBe(3);
+  expect(caseFile.parcel.isMulticard).toBe(true);
+  expect(caseFile.parcel.cardCount).toBe(2);
+  expect(caseFile.parcel.cardClasses).toEqual(["203", "211"]);
+  expect(caseFile.parcel.characteristicsReconciled).toBe(true);
+  expect(caseFile.parcel.currentAv).toBe(124432);
+  expect(caseFile.parcel.currentImprovementAv).toBe(98332);
+  expect(caseFile.parcel.assessmentStages).toEqual({
+    total: "board",
+    improvement: "board",
+    land: "board",
+  });
+  expect(caseFile.parcel.assessmentComponentsReconciled).toBe(true);
+  expect(caseFile.parcel.priorFinalAv).toBe(120000);
+  expect(caseFile.comparables).toHaveLength(1);
+  expect(caseFile.comparables[0]?.buildingSqft).toBe(4100);
+  expect(caseFile.comparables[0]?.cardCount).toBe(2);
+  expect(caseFile.dataWarnings.join("\n")).toContain("combined across all cards");
+});
+
 class UnsupportedClassClient {
   calls: string[] = [];
 

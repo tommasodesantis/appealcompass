@@ -67,7 +67,7 @@ test("unknown township is honest and non-crashing for selected BOR venue", () =>
 });
 
 test("PTAB requires the written notice date when notice was received", () => {
-  const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
+  const route = routeCase("Rogers Park", "2026-06-01", "ptab", {
     borNoticeReceived: true,
     borNoticeDate: null,
   });
@@ -78,7 +78,7 @@ test("PTAB requires the written notice date when notice was received", () => {
 });
 
 test("PTAB moves a 30th day that is an Illinois holiday to the next business day", () => {
-  const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
+  const route = routeCase("Rogers Park", "2026-06-01", "ptab", {
     borNoticeReceived: true,
     borNoticeDate: "2026-05-20",
   });
@@ -90,7 +90,7 @@ test("PTAB moves a 30th day that is an Illinois holiday to the next business day
 });
 
 test("PTAB moves a Sunday deadline to Monday", () => {
-  const route = routeCase("Rogers Park", "2026-07-01", "ptab", null, {
+  const route = routeCase("Rogers Park", "2026-07-01", "ptab", {
     borNoticeReceived: true,
     borNoticeDate: "2026-06-19",
   });
@@ -99,7 +99,7 @@ test("PTAB moves a Sunday deadline to Monday", () => {
 });
 
 test("PTAB expired state uses the adjusted notice-based date", () => {
-  const route = routeCase("Rogers Park", "2026-07-06", "ptab", null, {
+  const route = routeCase("Rogers Park", "2026-07-06", "ptab", {
     borNoticeReceived: true,
     borNoticeDate: "2026-05-20",
   });
@@ -110,7 +110,7 @@ test("PTAB expired state uses the adjusted notice-based date", () => {
 });
 
 test("PTAB explains waiting when the written BOR notice has not arrived", () => {
-  const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
+  const route = routeCase("Rogers Park", "2026-06-01", "ptab", {
     borNoticeReceived: false,
     borNoticeDate: null,
   });
@@ -120,7 +120,7 @@ test("PTAB explains waiting when the written BOR notice has not arrived", () => 
 });
 
 test("PTAB explanation identifies the later Cook County transmission rule", () => {
-  const route = routeCase("Rogers Park", "2026-06-01", "ptab", null, {
+  const route = routeCase("Rogers Park", "2026-06-01", "ptab", {
     borNoticeReceived: true,
     borNoticeDate: "2026-05-21",
   });

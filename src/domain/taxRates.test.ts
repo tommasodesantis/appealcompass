@@ -1,5 +1,9 @@
 import { DEFAULT_TAX_RATE } from "./config";
-import { CLERK_TAX_RATE_SOURCE_YEAR, clerkTaxRateForCode } from "./taxRates";
+import {
+  CLERK_2024_TAX_CODE_RATES,
+  CLERK_TAX_RATE_SOURCE_YEAR,
+  clerkTaxRateForCode,
+} from "./taxRates";
 
 test("Clerk tax-code lookup returns a parcel-specific composite rate", () => {
   const result = clerkTaxRateForCode("10001");
@@ -11,6 +15,15 @@ test("Clerk tax-code lookup returns a parcel-specific composite rate", () => {
   expect(result?.source).toContain("approximate parcel-specific rate 7.7774%");
   expect(result?.source).toContain(`Cook County Clerk ${CLERK_TAX_RATE_SOURCE_YEAR}`);
   expect(result?.source).toContain("tax code 10001");
+});
+
+test("committed Clerk lookup matches the audited source size and Schaumburg example rate", () => {
+  expect(Object.keys(CLERK_2024_TAX_CODE_RATES)).toHaveLength(4508);
+  expect(clerkTaxRateForCode("35011")).toMatchObject({
+    taxCode: "35011",
+    taxRate: 0.09585675,
+    source: expect.stringContaining("approximate parcel-specific rate 9.5857%"),
+  });
 });
 
 test("Clerk tax-code lookup returns null for missing or unknown codes", () => {

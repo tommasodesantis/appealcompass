@@ -496,6 +496,7 @@ test("comparable analysis rejects too few comps", () => {
   });
   expect(analysis.status).toBe("insufficient_data");
   expect(analysis.note).toContain("too few");
+  expect(analysis.subjectAvPerSqft).toBe(50000 / 1800);
 });
 
 test("BOR profile uses improvement assessment metric", () => {
@@ -606,8 +607,6 @@ test("evidence summary user evidence paths", () => {
     ...withUserEvidence(
       caseFile,
       defaultUserEvidence({
-        purchasePrice: 500000,
-        purchaseDate: "2024-06-01",
         appraisalValue: 420000,
         appraisalDate: "2024-08-01",
         actualSqft: 1600,
@@ -632,6 +631,47 @@ test("recorded sale drives overvaluation when no user value evidence is supplied
   };
   const evidence = buildEvidenceSummary(caseFile, 0.1);
   expect(evidence.arguments.some((argument) => argument.text.includes("recorded sale"))).toBe(true);
+  expect(evidence.valueEvidence.actionability).toBe("actionable");
+});
+
+test("a sub-five-percent value gap is context only and does not produce savings", () => {
+  const fixture = loadFixtureCase("03000000000001");
+  const caseFile = {
+    ...fixture,
+    parcel: { ...fixture.parcel, currentAv: 34000, priorFinalAv: null },
+    comparables: [],
+    subjectSales: [{ saleDate: "2023-03-04", salePrice: 335000, source: "recorded sale" }],
+  };
+
+  const evidence = buildEvidenceSummary(caseFile, 0.095857);
+
+  expect(evidence.valueEvidence.gapPct).toBeCloseTo(1.4925, 3);
+  expect(evidence.valueEvidence.actionability).toBe("context_only");
+  expect(evidence.arguments.some((argument) => argument.argumentType === "overvaluation")).toBe(
+    false,
+  );
+  expect(evidence.savingsAssumptions.point).toBe(0);
+  expect(evidence.tier).toBe("LIMITED");
+});
+
+test("a five-percent value gap is actionable", () => {
+  const fixture = loadFixtureCase("03000000000001");
+  const caseFile = {
+    ...fixture,
+    parcel: { ...fixture.parcel, currentAv: 31500, priorFinalAv: null },
+    comparables: [],
+    subjectSales: [{ saleDate: "2025-01-01", salePrice: 300000, source: "recorded sale" }],
+  };
+
+  const evidence = buildEvidenceSummary(caseFile, 0.1);
+
+  expect(evidence.valueEvidence.gapPct).toBeCloseTo(5, 8);
+  expect(evidence.valueEvidence.actionability).toBe("actionable");
+  expect(evidence.arguments.some((argument) => argument.argumentType === "overvaluation")).toBe(
+    true,
+  );
+  expect(evidence.savingsAssumptions.point).toBeGreaterThan(0);
+  expect(evidence.tier).toBe("MODERATE");
 });
 
 test("stale recorded sale is excluded from overvaluation and savings", () => {
@@ -650,7 +690,7 @@ test("user purchase supersedes recorded sale as value evidence", () => {
   const caseFile = {
     ...withUserEvidence(
       loadFixtureCase("03000000000001"),
-      defaultUserEvidence({ purchasePrice: 400000, purchaseDate: "2025-02-01" }),
+      defaultUserEvidence({ purchasePrice: 400000, purchaseDate: "2024-12-01" }),
     ),
     subjectSales: [{ saleDate: "2025-01-01", salePrice: 300000, source: "recorded sale" }],
   };
@@ -678,6 +718,183 @@ test("stale user purchase is excluded from overvaluation and savings", () => {
   expect(evidence.savingsAssumptions.point).toBe(0);
 });
 
+test("broad comparable rows remain visible but cannot drive the calculation", () => {
+  const fixture = loadFixtureCase("03000000000001");
+  const closeRows = [20, 21, 22].map((metric, index) =>
+    makeComparable({
+      pin: `0300000077${index.toString().padStart(4, "0")}`,
+      pinFormatted: `03-00-000-077-${index.toString().padStart(4, "0")}`,
+      buildingSqft: 1800,
+      yearBuilt: 1924,
+      improvementAv: metric * 1800,
+      landAv: 8000,
+      av: metric * 1800 + 8000,
+      landSqft: 3750,
+      neighborhood: fixture.parcel.neighborhood,
+      lat: (fixture.parcel.lat ?? 41.99) + index * 0.0001,
+      lon: fixture.parcel.lon,
+    }),
+  );
+  const broad = makeComparable({
+    pin: "03000000779999",
+    pinFormatted: "03-00-000-077-9999",
+    buildingSqft: 2600,
+    yearBuilt: 1959,
+    improvementAv: 2600,
+    landAv: 8000,
+    av: 10600,
+    landSqft: 3750,
+    neighborhood: fixture.parcel.neighborhood,
+    lat: (fixture.parcel.lat ?? 41.99) + 1,
+    lon: fixture.parcel.lon,
+  });
+
+  const analysis = analyzeComparables({ ...fixture, comparables: [...closeRows, broad] });
+
+  expect(analysis.status).toBe("ok");
+  expect(analysis.poolSize).toBe(4);
+  expect(analysis.actionablePoolSize).toBe(3);
+  expect(analysis.pool.some((item) => item.comparable.pin === broad.pin)).toBe(true);
+  expect(analysis.medianAvPerSqft).toBe(21);
+});
+
+test("multi-card subjects exclude parcels with a different card count", () => {
+  const fixture = loadFixtureCase("03000000000001");
+  const matching = [0, 1, 2].map((index) =>
+    makeComparable({
+      pin: `0300000066${index.toString().padStart(4, "0")}`,
+      pinFormatted: `03-00-000-066-${index.toString().padStart(4, "0")}`,
+      buildingSqft: 1800 + index * 10,
+      yearBuilt: 1924,
+      improvementAv: 32000 + index * 500,
+      isMulticard: true,
+      cardCount: 2,
+      cardClasses: ["203"],
+      neighborhood: fixture.parcel.neighborhood,
+      lat: fixture.parcel.lat,
+      lon: fixture.parcel.lon,
+    }),
+  );
+  const wrongCardCount = makeComparable({
+    pin: "03000000669999",
+    pinFormatted: "03-00-000-066-9999",
+    buildingSqft: 1800,
+    yearBuilt: 1924,
+    improvementAv: 1000,
+    neighborhood: fixture.parcel.neighborhood,
+    lat: fixture.parcel.lat,
+    lon: fixture.parcel.lon,
+  });
+  const caseFile = {
+    ...fixture,
+    parcel: {
+      ...fixture.parcel,
+      isMulticard: true,
+      cardCount: 2,
+      cardClasses: ["203"],
+    },
+    comparables: [...matching, wrongCardCount],
+  };
+
+  const analysis = analyzeComparables(caseFile);
+
+  expect(analysis.status).toBe("ok");
+  expect(analysis.pool.map((item) => item.comparable.pin)).not.toContain(wrongCardCount.pin);
+  expect(analysis.warnings.join(" ")).toContain("card count");
+});
+
+test("unreconciled subject cards suppress reduction arguments and savings", () => {
+  const fixture = loadFixtureCase("03000000000001");
+  const caseFile = {
+    ...fixture,
+    parcel: { ...fixture.parcel, characteristicsReconciled: false },
+    subjectSales: [{ saleDate: "2025-01-01", salePrice: 300000, source: "recorded sale" }],
+  };
+
+  const evidence = buildEvidenceSummary(caseFile, 0.1);
+
+  expect(evidence.comparableAnalysis.status).toBe("insufficient_data");
+  expect(evidence.arguments.some((argument) => argument.argumentType === "uniformity")).toBe(false);
+  expect(evidence.arguments.some((argument) => argument.argumentType === "overvaluation")).toBe(
+    false,
+  );
+  expect(evidence.savingsAssumptions.point).toBe(0);
+});
+
+test("stale appraisal is context only under the Assessor window", () => {
+  const caseFile = {
+    ...withUserEvidence(
+      loadFixtureCase("03000000000001"),
+      defaultUserEvidence({ appraisalValue: 300000, appraisalDate: "2022-12-31" }),
+    ),
+    comparables: [],
+    subjectSales: [],
+  };
+
+  const evidence = buildEvidenceSummary(caseFile, 0.1, "assessor");
+
+  expect(evidence.valueEvidence.actionability).toBe("context_only");
+  expect(evidence.valueEvidence.explanation).toContain("outside");
+  expect(evidence.arguments.some((argument) => argument.argumentType === "overvaluation")).toBe(
+    false,
+  );
+  expect(evidence.savingsAssumptions.point).toBe(0);
+});
+
+test("warns when every comparable driving the calculation is more than 3 km away", () => {
+  const fixture = loadFixtureCase("03000000000001");
+  const comparables = [0, 1, 2].map((index) =>
+    makeComparable({
+      pin: `0300000055${index.toString().padStart(4, "0")}`,
+      pinFormatted: `03-00-000-055-${index.toString().padStart(4, "0")}`,
+      buildingSqft: 1800 + index * 10,
+      yearBuilt: 1924,
+      improvementAv: 32000 + index * 500,
+      neighborhood: fixture.parcel.neighborhood,
+      lat: (fixture.parcel.lat ?? 41.99) + 0.04,
+      lon: fixture.parcel.lon,
+    }),
+  );
+
+  const analysis = analyzeComparables({ ...fixture, comparables });
+
+  expect(analysis.status).toBe("ok");
+  expect(analysis.warnings.join(" ")).toContain("more than 3 km");
+});
+
+test("warns when screening savings are large relative to current estimated tax", () => {
+  const fixture = loadFixtureCase("03000000000001");
+  const comparables = [0, 1, 2].map((index) =>
+    makeComparable({
+      pin: `0300000044${index.toString().padStart(4, "0")}`,
+      pinFormatted: `03-00-000-044-${index.toString().padStart(4, "0")}`,
+      buildingSqft: 1800,
+      yearBuilt: 1924,
+      improvementAv: 18000 + index * 180,
+      landAv: 8000,
+      av: 26000 + index * 180,
+      neighborhood: fixture.parcel.neighborhood,
+      lat: fixture.parcel.lat,
+      lon: fixture.parcel.lon,
+    }),
+  );
+  const evidence = buildEvidenceSummary(
+    {
+      ...fixture,
+      parcel: { ...fixture.parcel, priorFinalAv: null },
+      comparables,
+      subjectSales: [],
+    },
+    0.1,
+    "assessor",
+  );
+
+  expect(evidence.savingsAssumptions.point).toBeGreaterThan(0);
+  expect(evidence.comparableAnalysis.warnings.join(" ")).toContain(
+    "screening savings estimate is unusually large",
+  );
+});
+
 test("limited evidence path has no forced recommendation", () => {
   const caseFile = loadFixtureCase("03000000000030");
   const limitedCase = {
@@ -687,6 +904,6 @@ test("limited evidence path has no forced recommendation", () => {
   };
   const evidence = buildEvidenceSummary(limitedCase, 0.1);
   expect(evidence.tier).toBe("LIMITED");
-  expect(evidence.tierMessage).toContain("Appeal Compass can make mistakes");
+  expect(evidence.tierMessage).toContain("Comparable uniformity could not be established");
   expect(evidence.arguments).toEqual([]);
 });

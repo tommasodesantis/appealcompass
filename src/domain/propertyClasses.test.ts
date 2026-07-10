@@ -1,4 +1,10 @@
-import { propertyClassDecision } from "./propertyClasses";
+import { formatPropertyClass, propertyClassDecision } from "./propertyClasses";
+
+test("formats official three-digit property classes with a hyphen", () => {
+  expect(formatPropertyClass("295")).toBe("2-95");
+  expect(formatPropertyClass("211")).toBe("2-11");
+  expect(formatPropertyClass("unknown")).toBe("unknown");
+});
 
 test.each(["202", "203", "212", "299"])("supports residential dwelling class %s", (code) => {
   expect(propertyClassDecision(code).supported).toBe(true);

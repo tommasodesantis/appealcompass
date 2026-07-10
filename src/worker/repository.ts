@@ -1,7 +1,15 @@
 import { numberValue } from "../domain/caseSerde";
 import { ASSESSMENT_YEAR } from "../domain/config";
 import { NotFoundError, UnsupportedPropertyError } from "../domain/errors";
-import type { AssessmentHistoryRow, CaseFile, Comparable, Parcel, Sale } from "../domain/models";
+import type {
+  AssessmentHistoryRow,
+  AssessmentStage,
+  AssessmentStages,
+  CaseFile,
+  Comparable,
+  Parcel,
+  Sale,
+} from "../domain/models";
 import { defaultUserEvidence } from "../domain/models";
 import { formatPin, normalizePin } from "../domain/pin";
 import { propertyClassDecision } from "../domain/propertyClasses";
@@ -14,6 +22,7 @@ export interface CaseRepository {
 const SUBJECT_MAX_ROWS = 100;
 const COMPARABLE_POOL_CAP = 500;
 const COMPARABLE_SALES_MAX_ROWS = 2500;
+const COMPARABLE_CARD_MAX_ROWS = 2000;
 
 const PARCEL_SELECT = [
   "pin",
@@ -30,6 +39,10 @@ const PARCEL_SELECT = [
 
 const RES_SELECT = [
   "pin",
+  "card",
+  "row_id",
+  "pin_is_multicard",
+  "pin_num_cards",
   "class",
   "township_code",
   "year",
@@ -98,7 +111,7 @@ function rowYear(row: JsonRecord): number | null {
 }
 
 function latestRow(rows: JsonRecord[]): JsonRecord {
-  return [...rows].sort((a, b) => (rowYear(a) ?? 0) - (rowYear(b) ?? 0))[rows.length - 1] ?? {};
+  return [...rows].sort((a, b) => (rowYear(a) ?? 0) - (rowYear(b) ?? 0)).at(-1) ?? {};
 }
 
 function hasAssessmentValue(row: JsonRecord): boolean {
@@ -107,20 +120,73 @@ function hasAssessmentValue(row: JsonRecord): boolean {
   return (total !== null && total > 0) || (improvement !== null && improvement > 0);
 }
 
-function latestAssessmentValues(
-  rows: JsonRecord[],
-): [number | null, number | null, number | null, number | null] {
+interface AssessmentValues {
+  total: number | null;
+  improvement: number | null;
+  land: number | null;
+  year: number | null;
+  stages: AssessmentStages;
+  componentsReconciled: boolean;
+}
+
+function assessmentComponent(
+  row: JsonRecord,
+  names: { board: string; certified: string; mailed: string },
+): { value: number | null; stage: AssessmentStage } {
+  for (const stage of ["board", "certified", "mailed"] as const) {
+    const value = numberValue(row[names[stage]]);
+    if (value !== null) {
+      return { value, stage };
+    }
+  }
+  return { value: null, stage: null };
+}
+
+function latestAssessmentValues(rows: JsonRecord[]): AssessmentValues {
   const valueRows = rows.filter(hasAssessmentValue);
   if (valueRows.length === 0) {
-    return [null, null, null, null];
+    return {
+      total: null,
+      improvement: null,
+      land: null,
+      year: null,
+      stages: { total: null, improvement: null, land: null },
+      componentsReconciled: false,
+    };
   }
   const row = latestRow(valueRows);
-  return [
-    numberValue(pick(row, "board_tot", "certified_tot", "mailed_tot")),
-    numberValue(pick(row, "board_bldg", "certified_bldg", "mailed_bldg")),
-    numberValue(pick(row, "board_land", "certified_land", "mailed_land")),
-    rowYear(row),
-  ];
+  const total = assessmentComponent(row, {
+    board: "board_tot",
+    certified: "certified_tot",
+    mailed: "mailed_tot",
+  });
+  const improvement = assessmentComponent(row, {
+    board: "board_bldg",
+    certified: "certified_bldg",
+    mailed: "mailed_bldg",
+  });
+  const land = assessmentComponent(row, {
+    board: "board_land",
+    certified: "certified_land",
+    mailed: "mailed_land",
+  });
+  const componentsReconciled =
+    total.value !== null &&
+    improvement.value !== null &&
+    land.value !== null &&
+    Math.abs(total.value - improvement.value - land.value) < 1;
+  return {
+    total: total.value,
+    improvement: improvement.value,
+    land: land.value,
+    year: rowYear(row),
+    stages: {
+      total: total.stage,
+      improvement: improvement.stage,
+      land: land.stage,
+    },
+    componentsReconciled,
+  };
 }
 
 function styleKey(row: JsonRecord): string | null {
@@ -151,6 +217,131 @@ function amenityCount(row: JsonRecord): number {
     const value = row[name];
     return value !== null && value !== undefined && value !== "" && value !== "0" && value !== 0;
   }).length;
+}
+
+function truthy(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
+}
+
+function positiveValues(rows: JsonRecord[], ...names: string[]): number[] {
+  return rows
+    .map((row) => numberValue(pick(row, ...names)))
+    .filter((value): value is number => value !== null && value > 0);
+}
+
+function weightedMedianYear(rows: JsonRecord[]): number | null {
+  const values = rows
+    .map((row) => ({
+      year: intValue(pick(row, "char_yrblt", "yrblt")),
+      weight: numberValue(pick(row, "char_bldg_sf", "bldg_sf")) ?? 0,
+    }))
+    .filter(
+      (item): item is { year: number; weight: number } =>
+        item.year !== null && item.year > 0 && item.weight > 0,
+    )
+    .sort((a, b) => a.year - b.year);
+  const totalWeight = values.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight <= 0) {
+    return null;
+  }
+  let cumulative = 0;
+  for (const item of values) {
+    cumulative += item.weight;
+    if (cumulative >= totalWeight / 2) {
+      return item.year;
+    }
+  }
+  return values.at(-1)?.year ?? null;
+}
+
+interface AggregatedCharacteristics {
+  buildingSqft: number | null;
+  landSqft: number | null;
+  yearBuilt: number | null;
+  style: string | null;
+  amenityCount: number;
+  beds: number | null;
+  fullBaths: number | null;
+  isMulticard: boolean;
+  cardCount: number;
+  cardClasses: string[];
+  characteristicsReconciled: boolean;
+}
+
+function aggregateCharacteristics(
+  rows: JsonRecord[],
+  fallbackClass: string | null,
+): AggregatedCharacteristics {
+  if (rows.length === 0) {
+    return {
+      buildingSqft: null,
+      landSqft: null,
+      yearBuilt: null,
+      style: null,
+      amenityCount: 0,
+      beds: null,
+      fullBaths: null,
+      isMulticard: false,
+      cardCount: 0,
+      cardClasses: fallbackClass ? [fallbackClass] : [],
+      characteristicsReconciled: false,
+    };
+  }
+
+  const latestYear = Math.max(...rows.map((row) => rowYear(row) ?? 0));
+  const yearRows = latestYear > 0 ? rows.filter((row) => rowYear(row) === latestYear) : rows;
+  const cards = new Map<string, JsonRecord>();
+  yearRows.forEach((row, index) => {
+    const card = nullableString(pick(row, "card"));
+    const rowId = nullableString(pick(row, "row_id"));
+    cards.set(card ? `card:${card}` : rowId ? `row:${rowId}` : `index:${index}`, row);
+  });
+  const uniqueRows = [...cards.values()];
+  const expectedCards = Math.max(
+    0,
+    ...uniqueRows.map((row) => intValue(pick(row, "pin_num_cards")) ?? 0),
+  );
+  const isMulticard =
+    expectedCards > 1 ||
+    uniqueRows.length > 1 ||
+    uniqueRows.some((row) => truthy(row.pin_is_multicard));
+  const cardClasses = unique(
+    uniqueRows
+      .map((row) => nullableString(pick(row, "class")) ?? fallbackClass)
+      .filter((value): value is string => Boolean(value)),
+  ).sort();
+  const buildingValues = positiveValues(uniqueRows, "char_bldg_sf", "bldg_sf");
+  const landValues = positiveValues(uniqueRows, "char_land_sf", "land_sf");
+  const bedValues = positiveValues(uniqueRows, "char_beds");
+  const bathValues = positiveValues(uniqueRows, "char_fbath");
+  const styleValues = unique(
+    uniqueRows.map((row) => styleKey(row)).filter((value): value is string => value !== null),
+  );
+  const allClassesSupported = cardClasses.every(
+    (propertyClass) => propertyClassDecision(propertyClass).supported,
+  );
+  const expectedCountMatches = expectedCards === 0 || expectedCards === uniqueRows.length;
+  const allCardsHaveBuildingArea = buildingValues.length === uniqueRows.length;
+
+  return {
+    buildingSqft:
+      buildingValues.length > 0 ? buildingValues.reduce((sum, value) => sum + value, 0) : null,
+    landSqft: landValues.length > 0 ? Math.max(...landValues) : null,
+    yearBuilt: weightedMedianYear(uniqueRows),
+    style: styleValues.length === 1 ? (styleValues[0] ?? null) : null,
+    amenityCount: uniqueRows.reduce((sum, row) => sum + amenityCount(row), 0),
+    beds: bedValues.length > 0 ? bedValues.reduce((sum, value) => sum + value, 0) : null,
+    fullBaths: bathValues.length > 0 ? bathValues.reduce((sum, value) => sum + value, 0) : null,
+    isMulticard,
+    cardCount: uniqueRows.length,
+    cardClasses,
+    characteristicsReconciled:
+      uniqueRows.length > 0 &&
+      buildingValues.length > 0 &&
+      allClassesSupported &&
+      expectedCountMatches &&
+      (!isMulticard || allCardsHaveBuildingArea),
+  };
 }
 
 function groupByPin(rows: JsonRecord[]): Map<string, JsonRecord[]> {
@@ -274,7 +465,7 @@ export class SocrataRepository implements CaseRepository {
         ? `property class ${classDecision.propertyClass}`
         : "an unavailable property class";
       throw new UnsupportedPropertyError(
-        `Appeal Compass currently supports residential dwellings and residential condominiums only. PIN ${formatPin(normalized)} is classified as ${classDecision.category} (${classText}), so no evidence analysis was run.`,
+        `Appeal Compass currently supports residential dwellings and residential condominiums only. PIN ${formatPin(normalized)} is classified as ${classDecision.category} (${classText}), so no evidence analysis was run. If interested in a similar tool for commercial properties reach out here.`,
         formatPin(normalized),
         classDecision.propertyClass,
         classDecision.category,
@@ -311,10 +502,20 @@ export class SocrataRepository implements CaseRepository {
         );
       }
     }
-    const char = charRows.length > 0 ? latestRow(charRows) : {};
+    const characteristics = aggregateCharacteristics(charRows, classDecision.propertyClass);
     if (charRows.length === 0) {
       warnings.push(
         "Residential characteristics were unavailable; square-foot and comparable analysis may be limited.",
+      );
+    }
+    if (characteristics.isMulticard && characteristics.characteristicsReconciled) {
+      warnings.push(
+        `This parcel has ${characteristics.cardCount} residential property cards. Building sqft and improvement details were combined across all cards before comparison.`,
+      );
+    }
+    if (!characteristics.characteristicsReconciled && charRows.length > 0) {
+      warnings.push(
+        "Residential property-card details could not be fully reconciled. Comparable conclusions and savings are suppressed until every card and residential class can be verified.",
       );
     }
 
@@ -345,8 +546,8 @@ export class SocrataRepository implements CaseRepository {
         );
       }
     }
-    let [current, currentImprovement, currentLand, currentYear] = latestAssessmentValues(avRows);
-    if (avRows.length > 0 && current === null && currentImprovement === null) {
+    let assessment = latestAssessmentValues(avRows);
+    if (avRows.length > 0 && assessment.total === null && assessment.improvement === null) {
       avRows = responseRows(
         await this.client.fetchAll(
           "assessed_values",
@@ -356,14 +557,62 @@ export class SocrataRepository implements CaseRepository {
         warnings,
         normalized,
       );
-      [current, currentImprovement, currentLand, currentYear] = latestAssessmentValues(avRows);
-      if (current !== null || currentImprovement !== null) {
+      assessment = latestAssessmentValues(avRows);
+      if (assessment.total !== null || assessment.improvement !== null) {
         warnings.push(
           `We found a ${ASSESSMENT_YEAR} assessment row, but it did not include usable assessed values, so we're using the most recent value-bearing year (${
-            currentYear ?? "unknown"
+            assessment.year ?? "unknown"
           }). Double-check current values at the official source.`,
         );
       }
+    }
+
+    const selectedAssessmentYear = assessment.year;
+    if (
+      selectedAssessmentYear !== null &&
+      !avRows.some((row) => (rowYear(row) ?? selectedAssessmentYear) < selectedAssessmentYear)
+    ) {
+      const priorResponse = await this.client.fetchAll(
+        "assessed_values",
+        {
+          $select: AV_SELECT,
+          $where: `pin='${normalized}' AND year<'${selectedAssessmentYear}'`,
+        },
+        { maxRows: SUBJECT_MAX_ROWS },
+      );
+      avRows = [
+        ...avRows,
+        ...responseRows(priorResponse, warnings, normalized).filter(
+          (row) => rowYear(row) !== selectedAssessmentYear,
+        ),
+      ];
+    }
+
+    const assessmentHistory = assessmentHistoryFromRows(avRows);
+    const priorFinalAv =
+      [...assessmentHistory]
+        .reverse()
+        .find(
+          (row) =>
+            assessment.year !== null &&
+            row.year < assessment.year &&
+            row.finalAv !== null &&
+            row.finalAv > 0,
+        )?.finalAv ?? null;
+    if (assessment.total !== null && !assessment.componentsReconciled) {
+      warnings.push(
+        "Total AV could not be reconciled to Improvement AV plus Land AV in the selected assessment row. Automated reduction and savings estimates are suppressed.",
+      );
+    }
+    const usedStages = unique(
+      [assessment.stages.total, assessment.stages.improvement, assessment.stages.land].filter(
+        (stage): stage is Exclude<AssessmentStage, null> => stage !== null,
+      ),
+    );
+    if (usedStages.length > 1) {
+      warnings.push(
+        "The selected Total, Improvement, and Land AV components come from different assessment stages. The amounts reconcile arithmetically, but verify the official assessment record before filing.",
+      );
     }
 
     const parcel: Parcel = {
@@ -377,22 +626,28 @@ export class SocrataRepository implements CaseRepository {
       neighborhood: nullableString(pick(universe, "nbhd_code", "nbhd", "town_nbhd")),
       townshipCode: nullableString(pick(universe, "township_code")),
       taxCode: nullableString(pick(universe, "tax_code")),
-      buildingSqft: numberValue(pick(char, "char_bldg_sf", "bldg_sf")),
-      landSqft: numberValue(pick(char, "char_land_sf", "land_sf")),
-      yearBuilt: intValue(pick(char, "char_yrblt", "yrblt")),
-      style: styleKey(char),
-      amenityCount: amenityCount(char),
-      beds: numberValue(pick(char, "char_beds")),
-      fullBaths: numberValue(pick(char, "char_fbath")),
+      buildingSqft: characteristics.buildingSqft,
+      landSqft: characteristics.landSqft,
+      yearBuilt: characteristics.yearBuilt,
+      style: characteristics.style,
+      amenityCount: characteristics.amenityCount,
+      beds: characteristics.beds,
+      fullBaths: characteristics.fullBaths,
       lat: numberValue(pick(universe, "lat", "latitude")),
       lon: numberValue(pick(universe, "lon", "longitude")),
-      assessmentYear: currentYear,
-      currentAv: current,
-      currentImprovementAv: currentImprovement,
-      currentLandAv: currentLand,
-      priorFinalAv: null,
+      assessmentYear: assessment.year,
+      currentAv: assessment.total,
+      currentImprovementAv: assessment.improvement,
+      currentLandAv: assessment.land,
+      priorFinalAv,
+      assessmentStages: assessment.stages,
+      assessmentComponentsReconciled: assessment.componentsReconciled,
+      isMulticard: characteristics.isMulticard,
+      cardCount: characteristics.cardCount,
+      cardClasses: characteristics.cardClasses,
+      characteristicsReconciled: characteristics.characteristicsReconciled,
     };
-    if (current === null) {
+    if (assessment.total === null) {
       warnings.push(
         "Current assessed value was unavailable; savings and market-value estimates are limited.",
       );
@@ -405,7 +660,7 @@ export class SocrataRepository implements CaseRepository {
 
     return {
       parcel,
-      assessmentHistory: assessmentHistoryFromRows(avRows),
+      assessmentHistory,
       comparables,
       subjectSales,
       userEvidence: defaultUserEvidence(),
@@ -439,6 +694,7 @@ export class SocrataRepository implements CaseRepository {
       {
         $select: SALES_SELECT,
         $where: `pin in(${uniquePins.map((pin) => `'${pin}'`).join(",")})`,
+        $order: "pin,sale_date DESC",
       },
       { maxRows: COMPARABLE_SALES_MAX_ROWS },
     );
@@ -478,20 +734,22 @@ export class SocrataRepository implements CaseRepository {
     const where = `township_code='${parcel.townshipCode}' AND class='${parcel.propertyClass}'`;
     const yearWhere = `${where} AND year='${ASSESSMENT_YEAR}'`;
 
+    let comparableCharacteristicsYear: number | null = ASSESSMENT_YEAR;
     let chars = responseRows(
       await this.client.fetchAll(
         "res_characteristics",
-        { $select: RES_SELECT, $where: yearWhere },
+        { $select: RES_SELECT, $where: yearWhere, $order: "pin,card" },
         { maxRows: COMPARABLE_POOL_CAP },
       ),
       warnings,
       parcel.pin,
     );
     if (chars.length === 0) {
+      comparableCharacteristicsYear = null;
       chars = responseRows(
         await this.client.fetchAll(
           "res_characteristics",
-          { $select: RES_SELECT, $where: where },
+          { $select: RES_SELECT, $where: where, $order: "year DESC,pin,card" },
           { maxRows: COMPARABLE_POOL_CAP },
         ),
         warnings,
@@ -504,10 +762,40 @@ export class SocrataRepository implements CaseRepository {
       }
     }
 
+    const multicardPins = unique(
+      chars
+        .filter((row) => truthy(row.pin_is_multicard) || (intValue(row.pin_num_cards) ?? 0) > 1)
+        .map((row) => stringValue(row.pin))
+        .filter(Boolean)
+        .map(normalizePin),
+    );
+    for (let offset = 0; offset < multicardPins.length; offset += 100) {
+      const pinChunk = multicardPins.slice(offset, offset + 100);
+      const pinWhere = `pin in(${pinChunk.map((pin) => `'${pin}'`).join(",")})`;
+      const yearClause =
+        comparableCharacteristicsYear === null
+          ? ""
+          : ` AND year='${comparableCharacteristicsYear}'`;
+      const siblingRows = responseRows(
+        await this.client.fetchAll(
+          "res_characteristics",
+          {
+            $select: RES_SELECT,
+            $where: `${pinWhere}${yearClause}`,
+            $order: comparableCharacteristicsYear === null ? "year DESC,pin,card" : "pin,card",
+          },
+          { maxRows: COMPARABLE_CARD_MAX_ROWS },
+        ),
+        warnings,
+        parcel.pin,
+      );
+      chars = [...chars, ...siblingRows];
+    }
+
     let avs = responseRows(
       await this.client.fetchAll(
         "assessed_values",
-        { $select: AV_SELECT, $where: yearWhere },
+        { $select: AV_SELECT, $where: yearWhere, $order: "pin" },
         { maxRows: COMPARABLE_POOL_CAP },
       ),
       warnings,
@@ -517,7 +805,11 @@ export class SocrataRepository implements CaseRepository {
       const priorYear = ASSESSMENT_YEAR - 1;
       const priorResponse = await this.client.fetchAll(
         "assessed_values",
-        { $select: AV_SELECT, $where: `${where} AND year='${priorYear}'` },
+        {
+          $select: AV_SELECT,
+          $where: `${where} AND year='${priorYear}'`,
+          $order: "pin",
+        },
         { maxRows: COMPARABLE_POOL_CAP },
       );
       collectSocrataWarnings(priorResponse, warnings, parcel.pin);
@@ -532,7 +824,7 @@ export class SocrataRepository implements CaseRepository {
       avs = responseRows(
         await this.client.fetchAll(
           "assessed_values",
-          { $select: AV_SELECT, $where: where },
+          { $select: AV_SELECT, $where: where, $order: "year DESC,pin" },
           { maxRows: COMPARABLE_POOL_CAP },
         ),
         warnings,
@@ -548,7 +840,7 @@ export class SocrataRepository implements CaseRepository {
     let universeRows = responseRows(
       await this.client.fetchAll(
         "parcel_universe",
-        { $select: PARCEL_SELECT, $where: yearWhere },
+        { $select: PARCEL_SELECT, $where: yearWhere, $order: "pin" },
         { maxRows: COMPARABLE_POOL_CAP },
       ),
       warnings,
@@ -558,7 +850,7 @@ export class SocrataRepository implements CaseRepository {
       universeRows = responseRows(
         await this.client.fetchAll(
           "parcel_universe",
-          { $select: PARCEL_SELECT, $where: where },
+          { $select: PARCEL_SELECT, $where: where, $order: "year DESC,pin" },
           { maxRows: COMPARABLE_POOL_CAP },
         ),
         warnings,
@@ -573,49 +865,49 @@ export class SocrataRepository implements CaseRepository {
 
     const avRowsByPin = groupByPin(avs);
     const universeByPin = groupByPin(universeRows);
-    const comparablePins = unique(
-      chars
-        .map((row) => row.pin)
-        .filter((pin): pin is string | number => pin !== null && pin !== undefined && pin !== "")
-        .map((pin) => normalizePin(String(pin)))
-        .filter((pin) => pin !== parcel.pin),
-    );
+    const charRowsByPin = groupByPin(chars);
+    const comparablePins = [...charRowsByPin.keys()].filter((pin) => pin !== parcel.pin);
     const [salesByPin, salesWarnings] = await this.loadComparableSales(comparablePins, parcel.pin);
     warnings.push(...salesWarnings);
     const comps: Comparable[] = [];
-    for (const row of chars) {
-      if (!row.pin) {
+    for (const [compPin, rows] of charRowsByPin.entries()) {
+      if (compPin === parcel.pin) {
         continue;
       }
-      const compPin = normalizePin(String(row.pin));
-      const [totalAv, improvementAv, landAv, assessmentYear] = latestAssessmentValues(
-        avRowsByPin.get(compPin) ?? [],
-      );
+      const assessment = latestAssessmentValues(avRowsByPin.get(compPin) ?? []);
       const universe = universeByPin.has(compPin)
         ? latestRow(universeByPin.get(compPin) ?? [])
         : {};
+      const propertyClass = nullableString(pick(universe, "class")) ?? parcel.propertyClass;
+      const characteristics = aggregateCharacteristics(rows, propertyClass);
       const sale = salesByPin.get(compPin);
       comps.push({
         pin: compPin,
         pinFormatted: formatPin(compPin),
         address: "",
-        propertyClass: nullableString(pick(universe, "class") ?? pick(row, "class")),
-        buildingSqft: numberValue(pick(row, "char_bldg_sf", "bldg_sf")),
-        yearBuilt: intValue(pick(row, "char_yrblt", "yrblt")),
+        propertyClass,
+        buildingSqft: characteristics.buildingSqft,
+        yearBuilt: characteristics.yearBuilt,
         saleDate: sale?.saleDate ?? null,
         salePrice: sale?.salePrice ?? null,
-        assessmentYear,
-        av: totalAv,
-        improvementAv,
-        landAv,
-        landSqft: numberValue(pick(row, "char_land_sf", "land_sf")),
-        style: styleKey(row),
-        amenityCount: amenityCount(row),
+        assessmentYear: assessment.year,
+        av: assessment.total,
+        improvementAv: assessment.improvement,
+        landAv: assessment.land,
+        landSqft: characteristics.landSqft,
+        style: characteristics.style,
+        amenityCount: characteristics.amenityCount,
         neighborhood: nullableString(
-          pick(universe, "nbhd_code", "nbhd", "town_nbhd") ?? pick(row, "nbhd"),
+          pick(universe, "nbhd_code", "nbhd", "town_nbhd") ?? pick(rows[0] ?? {}, "nbhd"),
         ),
         lat: numberValue(pick(universe, "lat", "latitude")),
         lon: numberValue(pick(universe, "lon", "longitude")),
+        assessmentStages: assessment.stages,
+        assessmentComponentsReconciled: assessment.componentsReconciled,
+        isMulticard: characteristics.isMulticard,
+        cardCount: characteristics.cardCount,
+        cardClasses: characteristics.cardClasses,
+        characteristicsReconciled: characteristics.characteristicsReconciled,
       });
     }
     if (comps.length === 0) {

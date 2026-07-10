@@ -43,6 +43,13 @@ export interface PropertyClassDecision {
   category: string;
 }
 
+export function formatPropertyClass(rawPropertyClass: string | null): string {
+  const propertyClass = String(rawPropertyClass ?? "").trim();
+  return /^\d{3}$/.test(propertyClass)
+    ? `${propertyClass.slice(0, 1)}-${propertyClass.slice(1)}`
+    : propertyClass;
+}
+
 export function propertyClassDecision(rawPropertyClass: string | null): PropertyClassDecision {
   const propertyClass = String(rawPropertyClass ?? "").trim();
   if (!/^\d{3}$/.test(propertyClass)) {

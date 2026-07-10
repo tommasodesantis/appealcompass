@@ -16,18 +16,11 @@ import { addDays, daysBetween, nextBusinessDay } from "./dateUtils";
 import type { DeadlineItem, RouteResult, Venue } from "./models";
 
 export interface AppealStatusInput {
-  assessorAppealFiled?: boolean;
-  assessorDecisionReceived?: boolean | null;
-  borAppealFiled?: boolean;
-  borDecisionReceived?: boolean | null;
-  borDecisionDate?: string | null;
   borNoticeReceived?: boolean | null;
   borNoticeDate?: string | null;
 }
 
 const DEFAULT_APPEAL_STATUS: AppealStatusInput = {
-  borDecisionReceived: null,
-  borDecisionDate: null,
   borNoticeReceived: null,
   borNoticeDate: null,
 };
@@ -172,7 +165,7 @@ function ptabFromNoticeDate(noticeDate: string, today: string, warnings: string[
   if (daysRemaining < 0) {
     return {
       venue: "ptab",
-      headline: `The notice-based PTAB filing date appears to have passed (${deadline}).`,
+      headline: "The notice-based PTAB filing date appears to have passed.",
       reasoning,
       actionStatus: "expired",
       deadline,
@@ -187,7 +180,7 @@ function ptabFromNoticeDate(noticeDate: string, today: string, warnings: string[
 
   return {
     venue: "ptab",
-    headline: `Prepare to file with PTAB by ${deadline}.`,
+    headline: "Prepare to file with PTAB by the conservative notice-based deadline.",
     reasoning,
     actionStatus: daysRemaining <= 7 ? "urgent" : "open",
     deadline,
@@ -204,7 +197,6 @@ export function routeCase(
   townshipName: string,
   today: string,
   requestedVenue: Venue,
-  legacyBorDecisionDate: string | null = null,
   appealStatus: AppealStatusInput = DEFAULT_APPEAL_STATUS,
 ): RouteResult {
   const township = canonicalTownship(townshipName);
@@ -214,8 +206,8 @@ export function routeCase(
   ).filter((warning): warning is string => Boolean(warning));
 
   if (requestedVenue === "ptab") {
-    const noticeReceived = status.borNoticeReceived ?? status.borDecisionReceived;
-    const noticeDate = status.borNoticeDate ?? status.borDecisionDate ?? legacyBorDecisionDate;
+    const noticeReceived = status.borNoticeReceived;
+    const noticeDate = status.borNoticeDate;
     if (noticeReceived === false) {
       return ptabAwaitingNotice(warnings);
     }

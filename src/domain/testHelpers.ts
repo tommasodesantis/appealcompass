@@ -27,7 +27,7 @@ export function makeComparable(overrides: Partial<Comparable>): Comparable {
     yearBuilt: 1924,
     saleDate: null,
     salePrice: null,
-    assessmentYear: null,
+    assessmentYear: 2025,
     av: 40000,
     improvementAv: 32000,
     landAv: 8000,
@@ -37,6 +37,12 @@ export function makeComparable(overrides: Partial<Comparable>): Comparable {
     neighborhood: "0101",
     lat: null,
     lon: null,
+    assessmentStages: { total: null, improvement: null, land: null },
+    assessmentComponentsReconciled: true,
+    isMulticard: false,
+    cardCount: 1,
+    cardClasses: ["203"],
+    characteristicsReconciled: true,
     ...overrides,
   };
 }

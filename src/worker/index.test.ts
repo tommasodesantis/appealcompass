@@ -137,6 +137,30 @@ test("case endpoint returns user-facing errors", async () => {
   });
 });
 
+test.each([
+  ["purchasePrice=400000", "Enter both the subject-property purchase price and purchase date."],
+  [
+    "purchasePrice=400000&purchaseDate=2024-01-01&appraisalValue=390000&appraisalDate=2024-02-01",
+    "Enter either a purchase or an appraisal, not both.",
+  ],
+  ["appraisalValue=390000&appraisalDate=2024-02-30", "Enter a valid date for appraisal date."],
+])(
+  "case endpoint rejects incomplete or conflicting value evidence",
+  async (valueQuery, message) => {
+    const response = await worker.fetch(
+      new Request(
+        `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&${REQUIRED_CASE_QUERY}&${valueQuery}`,
+      ),
+      {},
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "input", message },
+    });
+  },
+);
+
 test("case endpoint returns a structured unsupported-property response", async () => {
   const testWorker = createWorker({
     caseBuilder: async () => {
@@ -240,13 +264,22 @@ function contactRequest(ip: string, body: Record<string, unknown>): Request {
   });
 }
 
+function rateLimiter(success: boolean): RateLimit {
+  return {
+    limit: vi.fn().mockResolvedValue({ success }),
+  } as unknown as RateLimit;
+}
+
 test("report endpoint verifies Turnstile and creates sanitized GitHub issue", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("turnstile")) {
-      return Response.json({ success: true });
+      return Response.json({ success: true, action: "feedback" });
     }
-    if (url.includes("api.github.com")) {
+    if (url === "https://api.github.com/user") {
+      return Response.json({ login: "tdsdesa-bot" });
+    }
+    if (url.includes("/issues")) {
       const body = String(init?.body ?? "");
       expect(body).not.toContain("<b>");
       expect(body).not.toContain("turnstile-token");
@@ -274,7 +307,7 @@ test("report endpoint verifies Turnstile and creates sanitized GitHub issue", as
       ok: true,
       issueUrl: "https://github.com/tommasodesantis/appealcompass/issues/1",
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   } finally {
     vi.unstubAllGlobals();
   }
@@ -303,11 +336,59 @@ test("report endpoint rejects failed Turnstile verification", async () => {
   }
 });
 
+test("report endpoint fails closed when Turnstile validation is unavailable", async () => {
+  const fetchMock = vi.fn().mockRejectedValue(new Error("network unavailable"));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      reportRequest("10.0.0.21", {
+        category: "wrong_comparables",
+        description: "Comps look wrong",
+        turnstileToken: "unverifiable-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", GITHUB_ISSUES_TOKEN: "github-secret" },
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "turnstile" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("report endpoint rejects a Turnstile token issued for a different action", async () => {
+  const fetchMock = vi.fn(async () =>
+    Response.json({ success: true, action: "commercial_interest" }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      reportRequest("10.0.0.22", {
+        category: "wrong_comparables",
+        description: "Comps look wrong",
+        turnstileToken: "wrong-action-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", GITHUB_ISSUES_TOKEN: "github-secret" },
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "turnstile" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 test("report endpoint returns friendly error when GitHub issue creation fails", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("turnstile")) {
-      return Response.json({ success: true });
+      return Response.json({ success: true, action: "feedback" });
     }
     return Response.json({ message: "server error" }, { status: 500 });
   });
@@ -331,11 +412,43 @@ test("report endpoint returns friendly error when GitHub issue creation fails", 
   }
 });
 
+test("report endpoint refuses to create an issue when the token actor is not tdsdesa-bot", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("turnstile")) {
+      return Response.json({ success: true, action: "feedback" });
+    }
+    if (url === "https://api.github.com/user") {
+      return Response.json({ login: "tommasodesantis" });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      reportRequest("10.0.0.23", {
+        category: "feature_request",
+        description: "Please add a feature",
+        turnstileToken: "ok-token",
+      }),
+      { TURNSTILE_SECRET_KEY: "turnstile-secret", GITHUB_ISSUES_TOKEN: "github-secret" },
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "configuration", message: expect.stringContaining("tdsdesa-bot") },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 test("contact endpoint verifies Turnstile and sends sanitized Resend email", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("turnstile")) {
-      return Response.json({ success: true });
+      return Response.json({ success: true, action: "commercial_interest" });
     }
     if (url.includes("api.resend.com")) {
       expect(init?.headers).toMatchObject({ authorization: "Bearer resend-secret" });
@@ -371,16 +484,17 @@ test("contact endpoint verifies Turnstile and sends sanitized Resend email", asy
   }
 });
 
-test("contact endpoint sends feature-suggestion topic to Resend", async () => {
+test("contact endpoint remains limited to commercial-property inquiries", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("turnstile")) {
-      return Response.json({ success: true });
+      return Response.json({ success: true, action: "commercial_interest" });
     }
     if (url.includes("api.resend.com")) {
       const body = String(init?.body ?? "");
-      expect(body).toContain("Appeal Compass feature suggestion");
-      expect(body).toContain("Please add a deadline reminder");
+      expect(body).toContain("Appeal Compass commercial-property inquiry");
+      expect(body).toContain("Please contact me about a commercial property");
+      expect(body).not.toContain("feature suggestion");
       return Response.json({ id: "email_456" }, { status: 200 });
     }
     throw new Error(`Unexpected fetch ${url}`);
@@ -390,7 +504,7 @@ test("contact endpoint sends feature-suggestion topic to Resend", async () => {
     const response = await worker.fetch(
       contactRequest("10.0.1.5", {
         topic: "feature_suggestion",
-        message: "Please add a deadline reminder",
+        message: "Please contact me about a commercial property",
         turnstileToken: "contact-token",
       }),
       { TURNSTILE_SECRET_KEY: "turnstile-secret", RESEND_API_KEY: "resend-secret" },
@@ -432,7 +546,7 @@ test("contact endpoint returns friendly error when Resend fails", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("turnstile")) {
-      return Response.json({ success: true });
+      return Response.json({ success: true, action: "commercial_interest" });
     }
     return Response.json({ message: "server error" }, { status: 500 });
   });
@@ -451,6 +565,51 @@ test("contact endpoint returns friendly error when Resend fails", async () => {
       error: { kind: "resend" },
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("case and print endpoints return 429 before building a case when the shared limit is exhausted", async () => {
+  const caseBuilder = vi.fn(async () => ({ ok: true }) as never);
+  const testWorker = createWorker({ caseBuilder });
+  const env = { CASE_RATE_LIMITER: rateLimiter(false) };
+
+  const caseResponse = await testWorker.fetch(caseRequest(99), env);
+  expect(caseResponse.status).toBe(429);
+  expect(caseResponse.headers.get("retry-after")).toBe("60");
+  await expect(caseResponse.json()).resolves.toMatchObject({
+    error: { kind: "rate_limited" },
+  });
+
+  const printResponse = await testWorker.fetch(
+    new Request(`http://example.test/print?demo=1&pin=03-00-000-000-0001&${REQUIRED_CASE_QUERY}`),
+    env,
+  );
+  expect(printResponse.status).toBe(429);
+  expect(printResponse.headers.get("retry-after")).toBe("60");
+  expect(caseBuilder).not.toHaveBeenCalled();
+});
+
+test("report endpoint returns 429 before external calls when submission limit is exhausted", async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const response = await worker.fetch(
+      reportRequest("10.0.0.24", {
+        category: "feature_request",
+        description: "Please add a feature",
+        turnstileToken: "ok-token",
+      }),
+      {
+        TURNSTILE_SECRET_KEY: "turnstile-secret",
+        GITHUB_ISSUES_TOKEN: "github-secret",
+        SUBMISSION_RATE_LIMITER: rateLimiter(false),
+      },
+    );
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(fetchMock).not.toHaveBeenCalled();
   } finally {
     vi.unstubAllGlobals();
   }

@@ -155,6 +155,38 @@ export function buildDataNotices(inputWarnings: string[]): DataNotice[] {
     });
   }
 
+  const multicardCombined = take((warning) =>
+    /parcel has \d+ residential property cards.*combined across all cards/i.test(warning),
+  );
+  if (multicardCombined.length > 0) {
+    notices.push({
+      code: "multicard_aggregation",
+      severity: "info",
+      title: "Multiple property cards were combined",
+      summary: multicardCombined[0] ?? "Building details were combined across property cards.",
+      details: [
+        "The parcel land area is counted once. Verify every card on the official property record before filing.",
+      ],
+    });
+  }
+
+  const excludedCardCandidates = take(
+    (warning) =>
+      /comparable candidate.*property-card or assessment components could not be reconciled/i.test(
+        warning,
+      ) || /comparable candidate.*property-card count did not match/i.test(warning),
+  );
+  if (excludedCardCandidates.length > 0) {
+    notices.push({
+      code: "comparable_card_exclusions",
+      severity: "caution",
+      title: "Some comparable candidates were excluded",
+      summary:
+        "Parcels with incomplete card or assessment details, or a different residential card count, were excluded before calculations.",
+      details: excludedCardCandidates,
+    });
+  }
+
   const classWarnings = take((warning) => /this residential class can involve/i.test(warning));
   if (classWarnings.length > 0) {
     notices.push({
@@ -181,6 +213,36 @@ export function buildDataNotices(inputWarnings: string[]): DataNotice[] {
       details: [
         "Unit condition, floor, view, parking, and association details are not evaluated by this public-data screen.",
       ],
+    });
+  }
+
+  const distantComparableWarnings = take((warning) =>
+    /every comparable driving the calculation is more than 3 km/i.test(warning),
+  );
+  if (distantComparableWarnings.length > 0) {
+    notices.push({
+      code: "distant_comparable_pool",
+      severity: "caution",
+      title: "Comparable locations need extra review",
+      summary:
+        "Every home driving the calculation is more than 3 km from the subject, so local neighborhood differences may matter.",
+      details: [
+        "Verify the location, neighborhood context, property cards, and physical similarity of every selected home before filing.",
+      ],
+    });
+  }
+
+  const largeSavingsWarnings = take((warning) =>
+    /screening savings estimate is unusually large/i.test(warning),
+  );
+  if (largeSavingsWarnings.length > 0) {
+    notices.push({
+      code: "large_savings_estimate",
+      severity: "caution",
+      title: "Savings estimate needs extra review",
+      summary:
+        "The screening reduction is large relative to the tax attributable to the current assessed value.",
+      details: [largeSavingsWarnings[0] ?? "Verify every input before relying on the estimate."],
     });
   }
 

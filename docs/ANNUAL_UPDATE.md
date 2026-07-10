@@ -11,7 +11,7 @@ Refresh these constants before each assessment session and before presenting the
 - Open the Cook County Board of Review site and the official township dates PDF:
   `https://www.cookcountyboardofreview.com/`.
 - Verify PTAB filing guidance at `https://ptab.illinois.gov/`.
-- Reconfirm sale-evidence guidance for the three-year pre-lien-date rule in
+- Reconfirm the Assessor, BOR, and PTAB purchase/appraisal date policies documented in
   `docs/LEARNINGS.md`.
 
 ## 2. Update Calendar Constants
@@ -34,6 +34,8 @@ Refresh these constants before each assessment session and before presenting the
   Clerk Tax Code Agency Rate file or equivalent Tax Rate Report extract. Confirm that
   `nj4t-kc8j.tax_code` still maps parcel rows to Clerk tax codes before relying on
   parcel-specific rates.
+- Compare every generated tax-code row and decimal rate with the source workbook, record the row
+  count, and retain a known-answer assertion for a representative parcel tax code.
 - Confirm the residential `ASSESSMENT_LEVEL` remains correct before changing it.
 - Re-run known-answer tests for estimated savings:
   `delta AV * equalizer * tax rate`, with a plus/minus 20% range.
@@ -67,10 +69,15 @@ Refresh these constants before each assessment session and before presenting the
 - Confirm `TURNSTILE_SITE_KEY` matches the intended public deployment widget.
 - Confirm `TURNSTILE_SECRET_KEY`, `GITHUB_ISSUES_TOKEN`, and `RESEND_API_KEY` are configured only as
   secrets.
-- Re-run report endpoint tests for Turnstile pass/fail and GitHub success/failure, and contact
-  endpoint tests for Turnstile pass/fail and Resend success/failure.
+- Confirm `GITHUB_ISSUES_TOKEN` resolves to `tdsdesa-bot` and re-run tests for a mismatched actor.
+- Re-run report endpoint tests for Turnstile pass/fail/action mismatch and GitHub success/failure,
+  and contact endpoint tests for Turnstile pass/fail/action mismatch and Resend success/failure.
+- Confirm the Cloudflare rate-limit namespace IDs are unique and the 10-per-minute case/print and
+  2-per-minute submission policies return HTTP 429 as expected.
 - Open the generated `.xlsx` comparable export in Excel or LibreOffice after workbook schema
   changes.
+- Verify the print packet honors the 3/5/10 comparable limit and contains no deadline-status
+  section.
 
 ## 7. Verify User-Facing Honesty
 
@@ -80,6 +87,8 @@ Refresh these constants before each assessment session and before presenting the
 - Confirm every deadline includes a verify-at-source link.
 - Confirm every user-supplied value is labeled as user-supplied.
 - Confirm estimated savings show the equalizer and tax-rate assumptions.
+- Confirm sub-5% implied-value gaps are context only and cannot create an argument, evidence-tier
+  point, or savings estimate.
 
 ## 8. Final Checks
 

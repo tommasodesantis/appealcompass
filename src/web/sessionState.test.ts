@@ -27,12 +27,23 @@ test("assessment snapshot serializes query params and payload", () => {
   expect(parsed?.query.get("venue")).toBe("assessor");
   expect(parsed?.payload).toEqual({ ok: true });
   expect(parsed?.savedAt).toBe("2026-07-08T12:00:00.000Z");
+  expect(value).toContain('"schemaVersion":2');
 });
 
 test("assessment snapshot parser rejects malformed storage values", () => {
   expect(parseAssessmentSnapshot(null)).toBeNull();
   expect(parseAssessmentSnapshot("not json")).toBeNull();
   expect(parseAssessmentSnapshot(JSON.stringify({ queryString: "pin=1" }))).toBeNull();
+  expect(
+    parseAssessmentSnapshot(
+      JSON.stringify({
+        schemaVersion: 1,
+        queryString: "pin=1",
+        payload: { ok: true },
+        savedAt: "2026-07-08T12:00:00.000Z",
+      }),
+    ),
+  ).toBeNull();
 });
 
 test("assessment snapshot save and load tolerate storage APIs", () => {

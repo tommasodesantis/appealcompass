@@ -90,3 +90,14 @@ test("print route labels user-supplied subject values", async () => {
   expect(html).not.toContain("2025TOWNSHIPOPEN-CLOSE.pdf");
   expectNoBannedText(html);
 });
+
+test("print route honors the user-selected comparable limit", async () => {
+  const html = await printText(
+    `demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&maxComps=3&${REQUIRED_STEP_ONE}`,
+  );
+  const tableBody = html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] ?? "";
+  expect(tableBody.match(/<tr>/g) ?? []).toHaveLength(3);
+  expect(html).toContain("3 comparable homes included");
+  expect(html).toContain("The table includes at most 3 homes.");
+  expect(html).not.toContain("Deadline status");
+});

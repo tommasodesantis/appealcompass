@@ -7,6 +7,18 @@ export type ComparableStatus = "ok" | "condo" | "insufficient_data";
 export type ArgumentStrength = "strong" | "supporting";
 export type DeadlineState = "published" | "not_published" | "awaiting_notice" | "expired";
 export type NoticeSeverity = "caution" | "info";
+export type ValueEvidenceActionability = "none" | "context_only" | "actionable";
+export type AssessmentStage = "board" | "certified" | "mailed" | null;
+export interface AssessmentStages {
+  total: AssessmentStage;
+  improvement: AssessmentStage;
+  land: AssessmentStage;
+}
+export type ValueEvidenceSource =
+  | "recorded_sale"
+  | "reported_purchase"
+  | "reported_appraisal"
+  | null;
 
 export interface Parcel {
   pin: string;
@@ -33,6 +45,12 @@ export interface Parcel {
   currentImprovementAv: number | null;
   currentLandAv: number | null;
   priorFinalAv: number | null;
+  assessmentStages: AssessmentStages;
+  assessmentComponentsReconciled: boolean;
+  isMulticard: boolean;
+  cardCount: number;
+  cardClasses: string[];
+  characteristicsReconciled: boolean;
 }
 
 export interface Comparable {
@@ -54,6 +72,12 @@ export interface Comparable {
   neighborhood: string | null;
   lat: number | null;
   lon: number | null;
+  assessmentStages: AssessmentStages;
+  assessmentComponentsReconciled: boolean;
+  isMulticard: boolean;
+  cardCount: number;
+  cardClasses: string[];
+  characteristicsReconciled: boolean;
 }
 
 export interface Sale {
@@ -76,11 +100,6 @@ export interface UserEvidence {
   appraisalValue: number | null;
   appraisalDate: string | null;
   ownershipType: "individual" | "llc" | "corporation" | "other";
-  assessorAppealFiled: boolean | null;
-  assessorDecisionReceived: boolean | null;
-  borAppealFiled: boolean | null;
-  borDecisionReceived: boolean | null;
-  borDecisionDate: string | null;
   borNoticeReceived: boolean | null;
   borNoticeDate: string | null;
   actualSqft: number | null;
@@ -131,6 +150,8 @@ export interface ComparableAnalysis {
   missingDataRate: number | null;
   scope: string | null;
   poolSize: number;
+  actionablePoolSize: number;
+  maxActionableSimilarity: number;
   subjectAvPerSqft: number | null;
   medianAvPerSqft: number | null;
   percentile: number | null;
@@ -168,6 +189,17 @@ export interface SavingsAssumption {
   high: number;
 }
 
+export interface ValueEvidence {
+  sourceType: ValueEvidenceSource;
+  sourceLabel: string | null;
+  value: number | null;
+  date: string | null;
+  impliedMarketValue: number | null;
+  gapPct: number | null;
+  actionability: ValueEvidenceActionability;
+  explanation: string;
+}
+
 export interface EvidenceSummary {
   tier: EvidenceTier;
   tierMessage: string;
@@ -175,6 +207,7 @@ export interface EvidenceSummary {
   landAssessment: LandAssessmentCheck;
   arguments: EvidenceArgument[];
   impliedMarketValue: number | null;
+  valueEvidence: ValueEvidence;
   savingsAssumptions: SavingsAssumption;
   disclaimers: string[];
 }
@@ -212,11 +245,6 @@ export function defaultUserEvidence(overrides: Partial<UserEvidence> = {}): User
     appraisalValue: null,
     appraisalDate: null,
     ownershipType: "individual",
-    assessorAppealFiled: null,
-    assessorDecisionReceived: null,
-    borAppealFiled: null,
-    borDecisionReceived: null,
-    borDecisionDate: null,
     borNoticeReceived: null,
     borNoticeDate: null,
     actualSqft: null,

@@ -26,22 +26,27 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
 - Shows deadlines, days remaining, official-source links, warning messages, comparable evidence,
   estimated savings assumptions, and a venue-specific checklist.
 - Uses an approximate parcel-specific Cook County Clerk tax-code rate when available, otherwise
-  labels the 10% county default assumption used for rough savings estimates.
+  labels the 10% county default assumption used for savings estimates.
 - Shows comparable PINs, distance, neighborhood, class, building facts, latest usable sale,
   Improvement AV/sqft, and similarity score.
-- Lets users filter displayed comparable evidence by similarity-score strictness while preserving
-  the full similar-home pool in the workbook.
+- Lets users filter comparable evidence by similarity-score strictness and sale recency. Older sales
+  remain clearly labeled as context and do not drive the assessment comparison.
+- Paginates the on-screen comparable table at 10 rows by default, with 5, 10, 25, and 50-row
+  options.
 - Runs a separate Land AV/land sqft check so lot-size effects and possible land/factual-error
   issues are not confused with building uniformity evidence.
 - Requests user-supplied values only after review, and only for missing public fields needed for
   comparable analysis.
-- Produces a concise printable comparable-analysis packet at `/print`.
+- Produces a concise printable comparable-analysis packet at `/print`, with a user-selected limit
+  of 3, 5, or 10 comparable homes and no homeowner-facing deadline-status section.
 - Downloads the similarity-filtered selected pool, full selected similar-home pool, and savings
   assumptions as a `.xlsx` workbook. Higher-assessed rows remain visible for transparency.
 - Restores the last successful in-tab assessment from `sessionStorage` when a user returns from the
   print page.
-- Provides Turnstile-protected problem-reporting, feature-suggestion, and commercial-interest forms when
-  deployment secrets are configured.
+- Provides one Turnstile-protected feedback form for problems and feature requests, plus a separate
+  commercial-interest contact form, when deployment secrets are configured.
+- Applies Cloudflare per-IP rate limits of 10 case/print requests per minute and 2 feedback/contact
+  submissions per minute.
 
 ## What It Does Not Do
 
@@ -51,7 +56,7 @@ open-source DIY property-tax-appeal tool built to help individual homeowners scr
   generally need an attorney.
 - It does not guess missing deadlines or facts. PTAB dates require the date on the written BOR
   decision notice and explain that the later Cook County township-transmission date may control.
-- It does not promise savings. Estimated savings are rough ranges using the configured equalizer and
+- It does not promise savings. Estimated savings are ranges using the configured equalizer and
   tax-rate assumptions, including the shown Clerk tax-code rate or fallback default.
 - It does not currently determine whether a homeowner qualifies for an exemption. A future
   questionnaire may help owners understand whether they might qualify for an exemption, but official
@@ -84,7 +89,7 @@ Create `.dev.vars` for local Wrangler development:
 ```powershell
 SOCRATA_APP_TOKEN=your_token_here
 TURNSTILE_SECRET_KEY=your_turnstile_secret_here
-GITHUB_ISSUES_TOKEN=your_github_issues_token_here
+GITHUB_ISSUES_TOKEN=your_tdsdesa_bot_github_token_here
 RESEND_API_KEY=your_resend_api_key_here
 ```
 
@@ -94,6 +99,9 @@ secret keys in committed files, browser code, logs, or reports.
 Public deployment constants live in `src/domain/publicConfig.ts`:
 
 - `TURNSTILE_SITE_KEY`: public Turnstile site key used by the report and contact widgets.
+
+`GITHUB_ISSUES_TOKEN` must authenticate as `tdsdesa-bot`. The Worker checks the token owner before
+every issue creation and refuses to post when the identity differs.
 
 Run locally:
 
@@ -164,7 +172,8 @@ This repository is deploy-ready but this project does not deploy automatically.
 
 3. Set the public Turnstile constant in `src/domain/publicConfig.ts` if the report and contact forms
    should be enabled.
-4. Review `wrangler.jsonc`.
+4. Review `wrangler.jsonc`, including the `CASE_RATE_LIMITER` and `SUBMISSION_RATE_LIMITER`
+   namespaces. Keep namespace IDs unique within the Cloudflare account.
 5. Deploy intentionally:
 
    ```powershell

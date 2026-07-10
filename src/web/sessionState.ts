@@ -1,4 +1,5 @@
 export const ASSESSMENT_SNAPSHOT_KEY = "appealcompass:lastAssessment";
+const ASSESSMENT_SNAPSHOT_SCHEMA_VERSION = 2;
 
 export interface AssessmentSnapshot<T> {
   query: URLSearchParams;
@@ -7,6 +8,7 @@ export interface AssessmentSnapshot<T> {
 }
 
 interface StoredAssessmentSnapshot<T> {
+  schemaVersion: number;
   queryString: string;
   payload: T;
   savedAt: string;
@@ -18,6 +20,7 @@ export function serializeAssessmentSnapshot<T>(
   savedAt = new Date().toISOString(),
 ): string {
   return JSON.stringify({
+    schemaVersion: ASSESSMENT_SNAPSHOT_SCHEMA_VERSION,
     queryString: query.toString(),
     payload,
     savedAt,
@@ -33,6 +36,7 @@ export function parseAssessmentSnapshot<T>(value: string | null): AssessmentSnap
     if (
       !parsed ||
       typeof parsed !== "object" ||
+      parsed.schemaVersion !== ASSESSMENT_SNAPSHOT_SCHEMA_VERSION ||
       typeof parsed.queryString !== "string" ||
       typeof parsed.savedAt !== "string" ||
       !("payload" in parsed)

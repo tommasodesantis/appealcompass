@@ -2,12 +2,30 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "appealcompass",
   "main": "src/worker/index.ts",
-  "compatibility_date": "2024-11-01",
+  "compatibility_date": "2026-07-10",
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  "ratelimits": [
+    {
+      "name": "CASE_RATE_LIMITER",
+      "namespace_id": "2026071001",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      "name": "SUBMISSION_RATE_LIMITER",
+      "namespace_id": "2026071002",
+      "simple": {
+        "limit": 2,
+        "period": 60
+      }
+    }
+  ],
   "vars": {
     "ENVIRONMENT": "development"
   }

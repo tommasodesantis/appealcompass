@@ -1,11 +1,27 @@
+import { assessmentStageLabel, assessmentStagesLabel } from "../domain/assessmentValues";
 import { assessmentTypeLabel } from "../domain/comparableDisplay";
 import {
+  type ComparableSaleFilter,
+  filterByComparableSale,
+  isRecentSaleDate,
+  parseComparableSaleFilter,
+} from "../domain/comparableSaleFilter";
+import {
   BOR_DATES_URL,
+  BOR_RULES_URL,
+  CCAO_APPEALS_URL,
   CCAO_OFFICIAL_URL,
   CCAO_WINDOWS,
   type FilingWindow,
   PTAB_OFFICIAL_URL,
+  PTAB_RULES_URL,
 } from "../domain/config";
+import {
+  DEFAULT_PRINT_COMPARABLE_LIMIT,
+  PRINT_COMPARABLE_LIMITS,
+  parsePrintComparableLimit,
+} from "../domain/printOptions";
+import { formatPropertyClass } from "../domain/propertyClasses";
 import { TURNSTILE_SITE_KEY } from "../domain/publicConfig";
 import {
   SIMILARITY_BANDS,
@@ -13,6 +29,12 @@ import {
   parseSimilarityMax,
   similarityFilterValue,
 } from "../domain/similarityBands";
+import {
+  COMPARABLE_PAGE_SIZES,
+  DEFAULT_COMPARABLE_PAGE_SIZE,
+  paginateComparables,
+  parseComparablePageSize,
+} from "./comparablePagination";
 import { loadAssessmentSnapshot, saveAssessmentSnapshot } from "./sessionState";
 import { buildComparableWorkbook, comparableWorkbookFilename } from "./xlsx";
 
@@ -21,7 +43,17 @@ interface ApiError {
   error: {
     kind: string;
     message: string;
+    pinFormatted?: string;
+    propertyClass?: string;
+    category?: string;
   };
+}
+
+class ApiRequestError extends Error {
+  constructor(readonly detail: ApiError["error"]) {
+    super(detail.message);
+    this.name = "ApiRequestError";
+  }
 }
 
 interface QueueStatus {
@@ -49,14 +81,25 @@ interface CasePayload {
       currentAv: number | null;
       currentImprovementAv: number | null;
       currentLandAv: number | null;
+      assessmentStages: {
+        total: "board" | "certified" | "mailed" | null;
+        improvement: "board" | "certified" | "mailed" | null;
+        land: "board" | "certified" | "mailed" | null;
+      };
+      assessmentComponentsReconciled: boolean;
+      isMulticard: boolean;
+      cardCount: number;
+      cardClasses: string[];
+      characteristicsReconciled: boolean;
     };
     userEvidence: {
       actualSqft: number | null;
       actualAv: number | null;
       actualImprovementAv: number | null;
       purchasePrice: number | null;
+      purchaseDate: string | null;
       appraisalValue: number | null;
-      borDecisionDate: string | null;
+      appraisalDate: string | null;
       borNoticeDate: string | null;
     };
     dataWarnings: string[];
@@ -83,6 +126,16 @@ interface CasePayload {
     tier: string;
     tierMessage: string;
     impliedMarketValue: number | null;
+    valueEvidence: {
+      sourceType: "recorded_sale" | "reported_purchase" | "reported_appraisal" | null;
+      sourceLabel: string | null;
+      value: number | null;
+      date: string | null;
+      impliedMarketValue: number | null;
+      gapPct: number | null;
+      actionability: "none" | "context_only" | "actionable";
+      explanation: string;
+    };
     savingsAssumptions: {
       taxRate: number;
       taxRateSource: string;
@@ -114,6 +167,8 @@ interface CasePayload {
       missingDataRate: number | null;
       scope: string | null;
       poolSize: number;
+      actionablePoolSize: number;
+      maxActionableSimilarity: number;
       subjectAvPerSqft: number | null;
       medianAvPerSqft: number | null;
       percentile: number | null;
@@ -179,7 +234,7 @@ interface CasePayload {
     sections: Array<{ title: string; lines: string[] }>;
   };
   warnings: string[];
-  notices?: Array<{
+  notices: Array<{
     code: string;
     severity: "caution" | "info";
     title: string;
@@ -213,6 +268,10 @@ let tooltipCounter = 0;
 let lastCasePayload: CasePayload | null = null;
 let lastCaseQuery: URLSearchParams | null = null;
 let selectedSimilarityMax: number | null = null;
+let selectedSaleFilter: ComparableSaleFilter = "all";
+let selectedRowsPerPage = DEFAULT_COMPARABLE_PAGE_SIZE;
+let selectedComparablePage = 1;
+let selectedPrintMaxComps = DEFAULT_PRINT_COMPARABLE_LIMIT;
 const IS_METHODOLOGY_PAGE = window.location.pathname === "/methodology";
 
 function escapeHtml(value: unknown): string {
@@ -270,6 +329,10 @@ function numberText(value: number | null, digits = 0): string {
   return value === null
     ? "Not available"
     : value.toLocaleString("en-US", { maximumFractionDigits: digits });
+}
+
+function yearText(value: number | null): string {
+  return value === null ? "Not available" : String(Math.trunc(value));
 }
 
 function evidenceLevelLabel(level: string): string {
@@ -420,8 +483,11 @@ async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { headers: { accept: "application/json" } });
   const data = (await response.json()) as T | ApiError;
   if (!response.ok || (typeof data === "object" && data && "ok" in data && data.ok === false)) {
-    const message = (data as ApiError).error?.message ?? "The request failed.";
-    throw new Error(message);
+    const detail = (data as ApiError).error ?? {
+      kind: "request",
+      message: "The request failed.",
+    };
+    throw new ApiRequestError(detail);
   }
   return data as T;
 }
@@ -473,8 +539,7 @@ function siteFooter(): string {
     <nav class="footer-links" aria-label="Project links">
       <a class="footer-icon-link" href="https://github.com/tommasodesantis/appealcompass" target="_blank" rel="noreferrer">${githubLogo()}<span>GitHub</span><span class="sr-only"> (opens in new tab)</span></a>
       <a href="https://ko-fi.com/tomdesantis" target="_blank" rel="noreferrer">Support the project<span class="sr-only"> (opens in new tab)</span></a>
-      <button type="button" id="suggest-feature" class="link-button">Suggest a feature</button>
-      <button type="button" id="report-problem" class="link-button">Report a problem</button>
+      <button type="button" id="open-feedback" class="link-button">Suggest a feature or report a problem</button>
     </nav>
   </footer>`;
 }
@@ -486,12 +551,12 @@ function githubHeaderLink(): string {
 function reportPanel(): string {
   const disabled = REPORTING_ENABLED ? "" : " disabled";
   const turnstile = REPORTING_ENABLED
-    ? `<div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}"></div>`
-    : '<p class="hint">Problem reporting is disabled until the Turnstile site key is configured.</p>';
+    ? `<div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}" data-action="feedback"></div>`
+    : '<p class="hint">Feedback is disabled until the Turnstile site key is configured.</p>';
   return `<section id="report-panel" class="report-panel" hidden>
     <div class="report-card" role="dialog" aria-modal="true" aria-labelledby="report-title">
       <button type="button" id="close-report" class="secondary close-button">Close</button>
-      <h2 id="report-title">Report a problem</h2>
+      <h2 id="report-title">Report a problem or request a feature</h2>
       <form id="report-form" class="stack">
         <label>
           <span>Category</span>
@@ -514,7 +579,7 @@ function reportPanel(): string {
         </label>
         ${turnstile}
         <div id="report-status" aria-live="polite"></div>
-        <button type="submit"${disabled}>Submit report</button>
+        <button type="submit"${disabled}>Submit feedback</button>
       </form>
     </div>
   </section>`;
@@ -537,14 +602,13 @@ function entityRefusalPanel(): string {
 function contactPanel(): string {
   const disabled = CONTACT_ENABLED ? "" : " disabled";
   const turnstile = CONTACT_ENABLED
-    ? `<div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}"></div>`
+    ? `<div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}" data-action="commercial_interest"></div>`
     : '<p class="hint">Contact is disabled until the Turnstile site key is configured.</p>';
   return `<section id="contact-panel" class="modal-panel" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="contact-title">
       <button type="button" id="close-contact" class="secondary close-button">Close</button>
       <h2 id="contact-title">Commercial-property interest</h2>
       <form id="contact-form" class="stack">
-        <input type="hidden" name="topic" id="contact-topic" value="commercial_interest">
         <label>
           <span>Name (optional)</span>
           <input name="name" maxlength="120"${disabled}>
@@ -636,10 +700,10 @@ function shell(): void {
 
         ${venuePickerHtml()}
 
-        <fieldset class="question-group">
-          <legend>Ownership type</legend>
+        <fieldset class="question-group ownership-question">
+          <legend>Who owns the property?</legend>
           <label>
-            <span>Who owns the property?</span>
+            <span class="sr-only">Who owns the property?</span>
             <select name="ownershipType" required>
               <option value="">Choose ownership type</option>
               <option value="individual">Individual</option>
@@ -695,6 +759,7 @@ function methodologyPage(): void {
       <a href="#scope">Scope</a>
       <a href="#data-years">Data and years</a>
       <a href="#comparables">Comparables</a>
+      <a href="#sales-evidence">Sales and venues</a>
       <a href="#edge-cases">Edge cases</a>
       <a href="#deadlines">Deadlines</a>
       <a href="#savings">Savings</a>
@@ -710,7 +775,9 @@ function methodologyPage(): void {
     <section class="panel stack" id="data-years">
       <p class="eyebrow">02 / Data and years</p>
       <h2>How public rows are selected</h2>
-      <p>The tool first requests the current assessment-year parcel, characteristic, and assessed-value rows. If a current row exists but has no usable assessed value, it uses the most recent value-bearing year and labels that limitation. Subject and comparable assessment years remain visible in the results and exports.</p>
+      <p>The tool first requests the current assessment-year parcel, characteristic, and assessed-value rows. If a current row exists but has no usable assessed value, it uses the most recent value-bearing year and labels that limitation. For each assessed-value component, the selection order is Board of Review, Assessor certified, then Assessor mailed. Subject and comparable assessment years remain visible in the results and exports.</p>
+      <p>On the county property-information portal, “Assessment Information” is the assessed value for the named year and stage. “Estimated Property Value” is generally that residential assessed value divided by the 10% assessment level. It is not an appraisal, sale price, or tax bill. A portal showing an older certified year can therefore differ from Appeal Compass when this tool has a newer complete Board, certified, or mailed row.</p>
+      <p>When the residential-characteristics data identifies multiple property cards, Appeal Compass combines building square footage and other improvement facts across the cards while using the parcel land area once. If the expected cards, their classes, or assessed-value components cannot be reconciled, automated reduction and savings estimates are suppressed.</p>
       <p>If residential characteristics are missing, the tool may ask for only the field needed to continue, such as building area or Improvement AV. Values entered by a user are fallback inputs and are labeled user-supplied.</p>
       <p>Data notes combine related limitations, such as missing characteristics and older assessed values, so the same issue is not repeated several times.</p>
     </section>
@@ -719,13 +786,21 @@ function methodologyPage(): void {
       <p class="eyebrow">03 / Comparable evidence</p>
       <h2>Selection, metrics, and interpretation</h2>
       <p>Residential uniformity evidence uses Improvement AV per building square foot. Total AV is shown for context, overvaluation checks, value breakdowns, and savings estimates, but Total AV alone does not generate a residential uniformity argument.</p>
-      <p>The candidate pool starts with the same public property class and township. Venue-specific profiles apply building-size and year-built rules, prefer same-neighborhood homes when enough records exist, and compare known assessment years consistently. The selected-comparables table shows the full filtered pool, including rows assessed above the subject; a higher-assessed row is context, not support for a reduction.</p>
-      <p>A lower similarity score means closer observable characteristics. Scores 0.00-0.10 are excellent, 0.10-0.20 are good, 0.20-0.35 are usable, 0.35-0.50 are broad matches that require careful review, and scores above 0.50 are questionable unless alternatives are sparse.</p>
+      <p>The candidate pool starts with the same public property class and township. Venue-specific profiles apply building-size and year-built rules, prefer same-neighborhood homes when enough records exist, and require matching known assessment years. Multi-card subjects are compared only with reconciled parcels having the same number of residential property cards. The selected-comparables table shows the full filtered pool, including rows assessed above the subject; a higher-assessed row is context, not support for a reduction.</p>
+      <p>A lower similarity score means closer observable characteristics. Scores 0.00-0.10 are excellent, 0.10-0.20 are good, and 0.20-0.35 are usable. Only scores at or below 0.35 can drive the median, evidence level, target assessment, or savings. Broader rows remain visible as context but cannot make an appeal look actionable.</p>
       <p>The evidence level summarizes the available public-data support. It is a screening label, not a legal conclusion. A pool can contain several homes while producing no reduction argument when the subject is already assessed below the pool median.</p>
     </section>
 
+    <section class="panel stack" id="sales-evidence">
+      <p class="eyebrow">04 / Sales, appraisals, and venues</p>
+      <h2>Value evidence is separate from comparable assessment evidence</h2>
+      <p>Sales in the comparable table describe other properties and are context only. Changing the sale filter never recalculates the uniformity comparison. A value check instead uses a qualifying sale, reported purchase, or appraisal for the subject property itself. The homeowner can add one documented subject purchase or appraisal in the collapsed value-evidence form.</p>
+      <p>The date screen is tied to January 1 of the subject's assessment year and the selected venue. The ${externalLink(CCAO_APPEALS_URL, "Assessor appeal guidance")} uses a two-year window for subject purchase and appraisal evidence. ${externalLink(BOR_RULES_URL, "BOR Rule 18")} identifies purchases within three years of the lien date; Appeal Compass uses the same conservative three-year screen for BOR appraisals. ${externalLink(PTAB_RULES_URL, "PTAB guidance")} calls for value evidence as close as possible to January 1 rather than publishing the same fixed cutoff, so the app uses a conservative three-year screening window and labels it as a screen, not an official PTAB deadline.</p>
+      <p>The evidence expected also differs by venue. The Assessor screen can identify current assessment uniformity, value, and factual-description issues. BOR has its own filing and evidence rules. PTAB generally requires stricter, verified property facts and adjustments in a residential comparison grid. Public data does not contain every PTAB adjustment field, so Appeal Compass does not fabricate a PTAB-ready conclusion when those facts are missing.</p>
+    </section>
+
     <section class="panel stack" id="edge-cases">
-      <p class="eyebrow">04 / Property edge cases</p>
+      <p class="eyebrow">05 / Property edge cases</p>
       <h2>What is included, limited, or blocked</h2>
       <dl class="methodology-cases">
         <div><dt>Residential condominiums</dt><dd>Class 299 is supported and compared with other Class 299 records. Condominium analysis is limited to public parcel-level fields and cannot evaluate unit condition, floor, view, parking, association finances, or other private attributes unless those appear in the source data.</dd></div>
@@ -738,14 +813,14 @@ function methodologyPage(): void {
     </section>
 
     <section class="panel stack">
-      <p class="eyebrow">05 / Land and arguments</p>
+      <p class="eyebrow">06 / Land and arguments</p>
       <h2>Separate checks prevent misleading comparisons</h2>
       <p>The land-component check compares Land AV per land square foot. This helps distinguish lot-size differences from building uniformity evidence. A large lot or unusual land assessment may explain a Total AV difference without supporting a building-assessment reduction.</p>
       <p>Potential arguments are generated only when their underlying checks pass. These may include uniformity, overvaluation, description error, or assessment shock. “No strong public-data argument” means only that this screen did not find one; condition, vacancy, demolition, exemptions, appraisal evidence, and other facts may still matter.</p>
     </section>
 
     <section class="panel stack" id="deadlines">
-      <p class="eyebrow">06 / Deadlines</p>
+      <p class="eyebrow">07 / Deadlines</p>
       <h2>How dates and unavailable schedules are handled</h2>
       <p>Assessor dates come from the official Tax Year 2026 township calendar. Townships without published dates are labeled “dates not published yet”; the tool does not invent a date.</p>
       <p>The official Board of Review dates page currently shows the prior Tax Year 2025 schedule, not a Tax Year 2026 township schedule. Appeal Compass therefore shows “2026 BOR dates not published yet” and links to the ${externalLink(BOR_DATES_URL, "official BOR dates page")} rather than reusing expired dates.</p>
@@ -754,10 +829,11 @@ function methodologyPage(): void {
     </section>
 
     <section class="panel stack" id="savings">
-      <p class="eyebrow">07 / Savings and exports</p>
-      <h2>Rough estimates, not promises</h2>
+      <p class="eyebrow">08 / Savings and exports</p>
+      <h2>Estimates, not promises</h2>
       <p>The point estimate applies the possible assessed-value reduction, state equalizer, and displayed tax-rate source. The range is shown around that point estimate. Missing current values or a default county tax-rate assumption reduces confidence.</p>
-      <p>The print report and spreadsheet use the same selected comparable pool and similarity threshold as the screen. User-entered fallback values are labeled user-supplied. Taxes must still be paid on time while an appeal is pending.</p>
+      <p>Third-party companies may show different potential savings because their quote models, private or user-supplied facts, comparable choices, target reductions, fee assumptions, and exemptions may differ. Appeal Compass does not reverse-engineer or calibrate its public-data screen to a proprietary quote. A difference by itself is not evidence that either estimate is a promised result.</p>
+      <p>The print report uses the current similarity and sale-information filters and the selected 3, 5, or 10-row limit. The spreadsheet preserves the broader comparable evidence for review. User-entered fallback values are labeled user-supplied. Taxes must still be paid on time while an appeal is pending.</p>
     </section>
 
     ${siteFooter()}
@@ -799,16 +875,18 @@ function setContactStatus(message: string, error = false): void {
 function openReportPanel(): void {
   const panel = document.querySelector<HTMLElement>("#report-panel");
   const context = document.querySelector<HTMLInputElement>("#report-context");
+  const categoryField = document.querySelector('#report-form select[name="category"]');
   if (!panel) {
     return;
   }
   if (context && lastCasePayload) {
     context.value = `PIN ${lastCasePayload.case.parcel.pinFormatted}; venue ${lastCasePayload.routing.venue}; generated ${lastCasePayload.generatedAt}`;
   }
+  if (categoryField instanceof HTMLSelectElement) {
+    categoryField.value = "";
+  }
   setReportStatus(
-    REPORTING_ENABLED
-      ? ""
-      : "Problem reporting is disabled until the Turnstile site key is configured.",
+    REPORTING_ENABLED ? "" : "Feedback is disabled until the Turnstile site key is configured.",
     true,
   );
   panel.hidden = false;
@@ -840,21 +918,10 @@ function closeEntityRefusalPanel(): void {
   }
 }
 
-function openContactPanel(
-  topic: "commercial_interest" | "feature_suggestion" = "commercial_interest",
-): void {
+function openContactPanel(): void {
   const panel = document.querySelector<HTMLElement>("#contact-panel");
   if (!panel) {
     return;
-  }
-  const title = document.querySelector<HTMLElement>("#contact-title");
-  const topicInput = document.querySelector<HTMLInputElement>("#contact-topic");
-  if (title) {
-    title.textContent =
-      topic === "feature_suggestion" ? "Suggest a feature" : "Commercial-property interest";
-  }
-  if (topicInput) {
-    topicInput.value = topic;
   }
   setContactStatus(
     CONTACT_ENABLED ? "" : "Contact is disabled until the Turnstile site key is configured.",
@@ -930,15 +997,7 @@ function validateStepOne(form: HTMLFormElement): boolean {
 }
 
 function noticeList(payload: CasePayload): string {
-  const notices =
-    payload.notices ??
-    payload.warnings.map((warning, index) => ({
-      code: `legacy_${index}`,
-      severity: "caution" as const,
-      title: "Data limitation",
-      summary: warning,
-      details: [],
-    }));
+  const notices = payload.notices;
   if (notices.length === 0) {
     return "";
   }
@@ -968,8 +1027,7 @@ function noticeList(payload: CasePayload): string {
 function renderDeadlineInfo(payload: CasePayload): string {
   const route = payload.routing;
   const subject = payload.case.parcel;
-  const noticeDate =
-    payload.case.userEvidence.borNoticeDate ?? payload.case.userEvidence.borDecisionDate;
+  const noticeDate = payload.case.userEvidence.borNoticeDate;
   const location =
     route.venue === "ptab" && noticeDate
       ? `Written BOR notice dated ${dateLabel(noticeDate)}`
@@ -994,18 +1052,10 @@ function renderDeadlineInfo(payload: CasePayload): string {
     .join("");
   return `<section class="panel deadline-panel" aria-labelledby="deadline-info">
     <div class="section-heading-row">
-      <div>
-        <p class="eyebrow">Timing</p>
-        <h2 id="deadline-info">Deadline status</h2>
-      </div>
-      <span class="status-pill status-${escapeHtml(route.actionStatus)}">${escapeHtml(route.deadlineLabel ?? route.actionStatus)}</span>
+      <h2 id="deadline-info">Deadline status</h2>
     </div>
     <p class="deadline-headline">${escapeHtml(route.headline)}</p>
-    ${
-      deadlineRows
-        ? `<div class="deadline-cards">${deadlineRows}</div>`
-        : `<div class="deadline-unavailable"><strong>${escapeHtml(route.deadlineLabel ?? "Deadline unavailable")}</strong><span>Use the official source below for updates.</span></div>`
-    }
+    ${deadlineRows ? `<div class="deadline-cards">${deadlineRows}</div>` : ""}
     <dl class="compact-facts">
       <div><dt>Venue</dt><dd>${escapeHtml(payload.venue.name)}</dd></div>
       <div><dt>Basis</dt><dd>${escapeHtml(location)}</dd></div>
@@ -1044,39 +1094,100 @@ function renderMissingEvidenceForm(payload: CasePayload): string {
   </section>`;
 }
 
+function renderValueEvidenceForm(payload: CasePayload): string {
+  const userEvidence = payload.case.userEvidence;
+  const evidenceType = userEvidence.purchasePrice
+    ? "purchase"
+    : userEvidence.appraisalValue
+      ? "appraisal"
+      : "";
+  const value = userEvidence.purchasePrice ?? userEvidence.appraisalValue;
+  const date = userEvidence.purchaseDate ?? userEvidence.appraisalDate;
+  return `<details class="value-evidence-details">
+    <summary>Add optional subject sale or appraisal evidence</summary>
+    <div class="value-evidence-content">
+      <h3 class="heading-with-tooltip">Subject-property value check ${infoTooltip(
+        "What value evidence is used here",
+        "Enter only a purchase or appraisal for the subject property. Comparable-property sales remain context only. The selected venue and assessment year determine whether the date is recent enough to support an automated value check.",
+      )}</h3>
+      <p>Use this only if you can document the subject property's arm's-length purchase or an appraisal. Do not enter a comparable property's sale.</p>
+      <form id="value-evidence-form" class="stack">
+        <div class="evidence-grid">
+          <label>
+            <span>Evidence type</span>
+            <select name="valueEvidenceType" required>
+              <option value="">Choose one</option>
+              <option value="purchase"${evidenceType === "purchase" ? " selected" : ""}>Subject purchase</option>
+              <option value="appraisal"${evidenceType === "appraisal" ? " selected" : ""}>Subject appraisal</option>
+            </select>
+          </label>
+          <label>
+            <span>Price or appraised value</span>
+            <input name="valueAmount" type="number" inputmode="decimal" min="1" step="1" value="${escapeHtml(
+              value ?? "",
+            )}" required>
+          </label>
+          <label>
+            <span>Purchase or appraisal date</span>
+            <input name="valueDate" type="date" value="${escapeHtml(date ?? "")}" required>
+          </label>
+        </div>
+        <p class="hint">The date is screened against January 1 of assessment year ${yearText(
+          payload.case.parcel.assessmentYear,
+        )} and the selected venue's rules. Evidence outside that window is shown only as context and cannot create savings.</p>
+        <button type="submit">Rerun value check</button>
+      </form>
+    </div>
+  </details>`;
+}
+
 function renderComparables(payload: CasePayload): string {
   const comps = payload.evidence.comparableAnalysis;
   const land = payload.evidence.landAssessment;
+  const valueEvidence = payload.evidence.valueEvidence;
   const officialRules = externalLink(payload.venue.rulesUrl, "See official rules");
-  const profileTooltip = infoTooltip(
-    "What comparable profile means",
-    'A "profile" is the set of matching rules this tool uses to pick similar homes for the specific venue: size, age, neighborhood, and which assessment number is compared, because each venue weighs comparables differently.',
-  );
   const similarityTooltip = infoTooltip(
     "What similarity score means",
     "Lower similarity scores mean the comparable is more similar to the subject based on size, age, and distance.",
   );
   const assessmentType = assessmentTypeLabel(comps.profileKey);
-  const filteredPool = filterBySimilarity(comps.pool, selectedSimilarityMax);
+  const similarityPool = filterBySimilarity(comps.pool, selectedSimilarityMax);
+  const filteredPool = filterByComparableSale(
+    similarityPool,
+    selectedSaleFilter,
+    payload.case.parcel.assessmentYear,
+  );
+  const pagination = paginateComparables(filteredPool, selectedComparablePage, selectedRowsPerPage);
+  selectedComparablePage = pagination.currentPage;
   const filterValue = similarityFilterValue(selectedSimilarityMax);
   const filterControls =
     comps.pool.length > 0
       ? `<div class="filter-row">
-        <label>
-          <span>Similarity score threshold</span>
-          <select id="similarity-filter">
-            ${SIMILARITY_BANDS.map(
-              (band) =>
-                `<option value="${escapeHtml(band.value)}"${band.value === filterValue ? " selected" : ""}>${escapeHtml(band.label)}</option>`,
-            ).join("")}
-          </select>
-        </label>
-        <p class="hint">0.00-0.10 excellent; 0.10-0.20 good; 0.20-0.35 usable; 0.35-0.50 broad match; above 0.50 questionable unless alternatives are sparse. Check every row before using it.</p>
+        <div class="filter-grid">
+          <label>
+            <span>Similarity score threshold</span>
+            <select id="similarity-filter">
+              ${SIMILARITY_BANDS.map(
+                (band) =>
+                  `<option value="${escapeHtml(band.value)}"${band.value === filterValue ? " selected" : ""}>${escapeHtml(band.label)}</option>`,
+              ).join("")}
+            </select>
+          </label>
+          <label>
+            <span>Sale information</span>
+            <select id="sale-filter">
+              <option value="all"${selectedSaleFilter === "all" ? " selected" : ""}>All assessment comps</option>
+              <option value="recent"${selectedSaleFilter === "recent" ? " selected" : ""}>Recent 3-year sales</option>
+              <option value="recorded"${selectedSaleFilter === "recorded" ? " selected" : ""}>Sale on record</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">Sale information is context only. This filter changes the rows shown on screen and in the PDF; it does not recalculate the assessment comparison.</p>
       </div>`
       : "";
   const comparisonToSubject = (avPerSqft: number): string => {
     if (comps.subjectAvPerSqft === null || comps.subjectAvPerSqft <= 0) {
-      return '<span class="comparison neutral">Subject unavailable</span>';
+      return '<span class="comparison neutral">Cannot compare — subject value missing</span>';
     }
     const difference = ((avPerSqft - comps.subjectAvPerSqft) / comps.subjectAvPerSqft) * 100;
     if (Math.abs(difference) < 0.5) {
@@ -1086,44 +1197,75 @@ function renderComparables(payload: CasePayload): string {
       ? `<span class="comparison lower">${numberText(Math.abs(difference), 1)}% lower</span>`
       : `<span class="comparison higher">${numberText(difference, 1)}% higher</span>`;
   };
-  const rows = filteredPool
-    .map(
-      (exhibit) => `<tr>
+  const rows = pagination.pageRows
+    .map((exhibit) => {
+      const hasSale = exhibit.comparable.saleDate && exhibit.comparable.salePrice;
+      const staleSale =
+        hasSale &&
+        !isRecentSaleDate(exhibit.comparable.saleDate, payload.case.parcel.assessmentYear);
+      const broadContext = exhibit.similarity > comps.maxActionableSimilarity;
+      const saleDate = exhibit.comparable.saleDate
+        ? `${escapeHtml(dateLabel(exhibit.comparable.saleDate))}${
+            staleSale ? '<small class="stale-sale">Older sale — context only</small>' : ""
+          }`
+        : "Not available";
+      const salePrice = `${dollars(exhibit.comparable.salePrice)}${
+        staleSale ? '<small class="stale-sale">Context only</small>' : ""
+      }`;
+      return `<tr>
         <td>${escapeHtml(exhibit.comparable.pinFormatted)}</td>
         <td>${exhibit.distanceKm === null ? "Not available" : numberText(exhibit.distanceKm, 2)}</td>
         <td>${escapeHtml(exhibit.comparable.neighborhood ?? "Not available")}</td>
-        <td>${escapeHtml(exhibit.comparable.propertyClass ?? "Not available")}</td>
+        <td>${escapeHtml(formatPropertyClass(exhibit.comparable.propertyClass) || "Not available")}</td>
         <td>${numberText(exhibit.comparable.buildingSqft)}</td>
-        <td>${escapeHtml(exhibit.comparable.yearBuilt ?? "Not available")}</td>
-        <td>${exhibit.comparable.saleDate ? escapeHtml(dateLabel(exhibit.comparable.saleDate)) : "Not available"}</td>
-        <td>${dollars(exhibit.comparable.salePrice)}</td>
+        <td>${yearText(exhibit.comparable.yearBuilt)}</td>
+        <td>${saleDate}</td>
+        <td>${salePrice}</td>
         <td>${escapeHtml(assessmentType)}</td>
         <td>${dollars(exhibit.avPerSqft)}</td>
         <td>${comparisonToSubject(exhibit.avPerSqft)}</td>
-        <td>${numberText(exhibit.similarity, 3)}</td>
-      </tr>`,
-    )
+        <td>${numberText(exhibit.similarity, 3)}${
+          broadContext ? '<small class="stale-sale">Broader match — context only</small>' : ""
+        }</td>
+      </tr>`;
+    })
     .join("");
+  const paginationControls =
+    filteredPool.length > 0
+      ? `<div class="table-pagination" aria-label="Comparable table pagination">
+          <label><span>Rows per page</span><select id="comps-page-size">${COMPARABLE_PAGE_SIZES.map(
+            (size) =>
+              `<option value="${size}"${size === selectedRowsPerPage ? " selected" : ""}>${size}</option>`,
+          ).join("")}</select></label>
+          <p class="table-page-status" aria-live="polite">Rows ${pagination.startRow}–${pagination.endRow} of ${pagination.totalRows}; page ${pagination.currentPage} of ${pagination.totalPages}</p>
+          <div class="table-page-actions">
+            <button type="button" id="comps-prev" class="secondary"${pagination.currentPage <= 1 ? " disabled" : ""}>Previous</button>
+            <button type="button" id="comps-next" class="secondary"${pagination.currentPage >= pagination.totalPages ? " disabled" : ""}>Next</button>
+          </div>
+        </div>`
+      : "";
   const table =
     rows.length === 0
-      ? `<p class="empty-state">${comps.pool.length > 0 ? "No selected homes meet the current similarity filter." : "No comparable rows could be selected from the available public data."}</p>`
+      ? `<p class="empty-state">${comps.pool.length > 0 ? "No selected homes meet the current display filters." : "No comparable rows could be selected from the available public data."}</p>`
       : `<div class="table-wrap"><table>
-          <caption>${filteredPool.length} selected comparable ${filteredPool.length === 1 ? "home" : "homes"}; rows assessed above the subject are included for transparency.</caption>
+          <caption>${filteredPool.length} selected comparable ${filteredPool.length === 1 ? "home" : "homes"}</caption>
           <thead><tr><th>PIN</th><th>Distance km</th><th>Neighborhood</th><th>Property class</th><th>Building sqft</th><th>Year built</th><th>Sale date</th><th>Sale price</th><th>Assessment metric</th><th>${escapeHtml(comps.metricLabel)}/sqft</th><th>Compared with subject</th><th>Similarity score ${similarityTooltip}</th></tr></thead>
           <tbody>${rows}</tbody>
-        </table></div>`;
+        </table></div>${paginationControls}`;
   const evidenceMessage =
     payload.evidence.tier === "LIMITED"
       ? `${escapeHtml(payload.evidence.tierMessage)} ${officialRules}.`
       : escapeHtml(payload.evidence.tierMessage);
   const interpretation =
-    comps.poolSize === 0 || comps.gapPct === null
-      ? "The available public data is not sufficient to compare the subject with a selected residential pool."
-      : comps.gapPct > 0
-        ? `The subject is assessed ${numberText(comps.gapPct, 1)}% above the selected-pool median on ${comps.metricLabel}/sqft. That difference may support a closer uniformity review, but each row still needs verification.`
-        : comps.gapPct < 0
-          ? `The subject is assessed ${numberText(Math.abs(comps.gapPct), 1)}% below the selected-pool median on ${comps.metricLabel}/sqft. These public comparables do not support a lower residential uniformity assessment.`
-          : `The subject is aligned with the selected-pool median on ${comps.metricLabel}/sqft, so this screen does not show a residential uniformity gap.`;
+    comps.status !== "ok"
+      ? `${comps.note} No uniformity conclusion is shown until the required subject fields and at least three suitable homes are available.`
+      : comps.gapPct === null
+        ? "The selected homes did not produce a usable uniformity gap."
+        : comps.gapPct > 0
+          ? `The subject is assessed ${numberText(comps.gapPct, 1)}% above the median of ${comps.actionablePoolSize} sufficiently similar homes on ${comps.metricLabel}/sqft. That difference may support a closer uniformity review, but each row still needs verification.`
+          : comps.gapPct < 0
+            ? `The subject is assessed ${numberText(Math.abs(comps.gapPct), 1)}% below the median of ${comps.actionablePoolSize} sufficiently similar homes on ${comps.metricLabel}/sqft. These public comparables do not support a lower residential uniformity assessment.`
+            : `The subject is aligned with the median of sufficiently similar homes on ${comps.metricLabel}/sqft, so this screen does not show a residential uniformity gap.`;
   const argumentCards = payload.evidence.arguments.length
     ? payload.evidence.arguments
         .map(
@@ -1134,31 +1276,67 @@ function renderComparables(payload: CasePayload): string {
           </article>`,
         )
         .join("")
-    : `<div class="empty-state"><strong>No strong public-data argument was found.</strong><span>This does not rule out condition, appraisal, exemption, or factual-error evidence that is not present in the public data.</span></div>`;
+    : `<div class="empty-state"><strong>No actionable public-data argument was found.</strong><span>This does not rule out condition, appraisal, exemption, or factual-error evidence that is not present in the public data.</span></div>`;
+  const effectiveTotalAv =
+    payload.case.parcel.currentAv ?? payload.case.userEvidence.actualAv ?? null;
+  const valueSummary =
+    valueEvidence.sourceLabel && valueEvidence.value !== null
+      ? `<strong>Sale or appraisal evidence:</strong> Implied market value ${dollars(
+          valueEvidence.impliedMarketValue,
+        )} = Total AV ${dollars(
+          effectiveTotalAv,
+        )} ÷ 10% residential assessment level. Compared with the ${escapeHtml(
+          valueEvidence.sourceLabel,
+        )} of ${dollars(valueEvidence.value)}, the difference is ${
+          valueEvidence.gapPct === null
+            ? "not available"
+            : `${numberText(Math.abs(valueEvidence.gapPct), 1)}% ${
+                valueEvidence.gapPct >= 0 ? "above" : "below"
+              }`
+        }. ${escapeHtml(valueEvidence.explanation)}`
+      : `<strong>Sale or appraisal evidence:</strong> ${escapeHtml(valueEvidence.explanation)}`;
+  const savings = payload.evidence.savingsAssumptions;
+  const savingsSection =
+    savings.point > 0
+      ? `<div class="savings-card">
+          <div><h3 class="heading-with-tooltip">Savings estimate ${infoTooltip(
+            "How savings are estimated",
+            "Estimated savings = ΔAV × E × r, where ΔAV is the assessed-value reduction, E is the state equalizer, and r is the assumed tax rate. The range is shown as ±20% and is not a promise.",
+          )}</h3></div>
+          <strong>${dollars(savings.low)} to ${dollars(savings.high)}</strong>
+          <span>Point estimate ${dollars(savings.point)}</span>
+        </div>
+        <p class="hint">Assumes equalizer ${savings.stateEqualizer} and ${escapeHtml(
+          savings.taxRateSource,
+        )}; this is an estimate, not a promise.</p>`
+      : `<div class="savings-card savings-unavailable">
+          <div><h3>Savings estimate unavailable</h3><p>No actionable public-data reduction amount passed the current evidence checks.</p></div>
+        </div>`;
   return `<section class="panel evidence-panel" aria-labelledby="evidence-summary">
     <div class="section-heading-row evidence-heading">
-      <div>
-        <p class="eyebrow">Public-data screen</p>
-        <h2 id="evidence-summary">Evidence summary</h2>
-      </div>
+      <h2 id="evidence-summary">Evidence summary</h2>
       <span class="evidence-level level-${escapeHtml(payload.evidence.tier.toLowerCase())}">${escapeHtml(
         evidenceLevelLabel(payload.evidence.tier),
       )}</span>
     </div>
 
     <div class="evidence-verdict">
-      <h3>What the numbers say</h3>
-      <p>${escapeHtml(interpretation)}</p>
+      <p><strong>Uniformity evidence:</strong> ${escapeHtml(interpretation)}</p>
+      <p>${valueSummary}</p>
       <p class="hint">${evidenceMessage} ${infoTooltip(
         "What evidence level means",
-        "The evidence level is a rough screen of how much public data supports spending time on an appeal.",
+        "The evidence level is a screen of how much public data supports spending time on an appeal.",
       )}</p>
     </div>
 
+    ${renderValueEvidenceForm(payload)}
+
     <div class="metric-grid" aria-label="Comparable analysis key figures">
-      <div><span>Selected homes</span><strong>${numberText(comps.poolSize)}</strong><small>${escapeHtml(comps.scope ?? "Scope unavailable")}</small></div>
+      <div><span>Selected homes</span><strong>${numberText(comps.poolSize)}</strong><small>${numberText(
+        comps.actionablePoolSize,
+      )} drive the calculation · ${escapeHtml(comps.scope ?? "Scope unavailable")}</small></div>
       <div><span>Subject ${escapeHtml(comps.metricLabel)}/sqft</span><strong>${dollars(comps.subjectAvPerSqft)}</strong></div>
-      <div><span>Pool median</span><strong>${dollars(comps.medianAvPerSqft)}</strong></div>
+      <div><span>Calculation median</span><strong>${dollars(comps.medianAvPerSqft)}</strong></div>
       <div><span>Subject vs median</span><strong>${comps.gapPct === null ? "Not available" : `${numberText(comps.gapPct, 1)}%`}</strong></div>
     </div>
 
@@ -1166,41 +1344,28 @@ function renderComparables(payload: CasePayload): string {
       <summary>Analysis method and value context</summary>
       <p>${
         comps.status === "ok"
-          ? `Comparable analysis completed with the ${escapeHtml(comps.profileLabel)} profile using ${escapeHtml(comps.metricLabel)}/sqft. ${profileTooltip}`
+          ? `The ${escapeHtml(comps.profileLabel)} matching method compared ${escapeHtml(comps.metricLabel)}/sqft for same-class homes and used the ${escapeHtml(comps.scope ?? "available")} scope for this case.`
           : escapeHtml(comps.note)
       }</p>
       <p><strong>Total AV:</strong> Shown for value context, overvaluation checks, and savings estimates. It is not used by itself to generate residential uniformity evidence.</p>
       <p><strong>Land check:</strong> ${escapeHtml(land.note)} Subject Land AV/sqft ${dollars(
         land.subjectLandAvPerSqft,
-      )}; selected-pool median ${dollars(land.medianLandAvPerSqft)}.</p>
+      )}; sufficiently-similar-pool median ${dollars(land.medianLandAvPerSqft)}.</p>
     </details>
 
     <div class="subsection-heading">
-      <div><p class="eyebrow">Comparable detail</p><h3>Selected comparable homes</h3></div>
-      <p>All selected rows are shown, not only homes assessed below the subject.</p>
+      <h3>Selected comparable homes</h3>
     </div>
     ${filterControls}
     ${table}
 
-    <div class="subsection-heading"><div><p class="eyebrow">Assessment screen</p><h3 class="heading-with-tooltip">Potential appeal arguments ${infoTooltip(
+    <div class="subsection-heading"><h3 class="heading-with-tooltip">Potential appeal arguments ${infoTooltip(
       "What arguments mean",
-      "An argument is a distinct reason the assessment may be too high: uniformity, overvaluation, description error, or assessment shock. Strength labels are rough screens, not legal conclusions.",
-    )}</h3></div></div>
+      "An argument is a distinct reason the assessment may be too high: uniformity, overvaluation, description error, or assessment shock. Strength labels are screening indicators, not legal conclusions.",
+    )}</h3></div>
     <div class="argument-grid">${argumentCards}</div>
 
-    <div class="savings-card">
-      <div><p class="eyebrow">If a reduction is supported</p><h3 class="heading-with-tooltip">Rough savings estimate ${infoTooltip(
-        "How rough savings are estimated",
-        "Estimated savings = ΔAV × E × r, where ΔAV is the assessed-value reduction, E is the state equalizer, and r is the assumed tax rate. The range is shown as ±20% and is not a promise.",
-      )}</h3></div>
-      <strong>${dollars(payload.evidence.savingsAssumptions.low)} to ${dollars(
-        payload.evidence.savingsAssumptions.high,
-      )}</strong>
-      <span>Point estimate ${dollars(payload.evidence.savingsAssumptions.point)}</span>
-    </div>
-    <p class="hint">Assumes equalizer ${payload.evidence.savingsAssumptions.stateEqualizer} and ${escapeHtml(
-      payload.evidence.savingsAssumptions.taxRateSource,
-    )}; this is a rough range, not a promise.</p>
+    ${savingsSection}
     <p><a href="/methodology">Read the methodology</a></p>
   </section>`;
 }
@@ -1220,6 +1385,13 @@ function renderWhatsNext(payload: CasePayload, printQuery: URLSearchParams): str
       "Cook County Assessor exemptions page",
     )}.</p>
     <p>Before filing, review the ${officialSubmission} and ${officialRules} for exactly what to submit.</p>
+    <div class="export-settings">
+      <label><span>Comparable homes in PDF</span><select id="pdf-comps-limit">${PRINT_COMPARABLE_LIMITS.map(
+        (limit) =>
+          `<option value="${limit}"${limit === selectedPrintMaxComps ? " selected" : ""}>${limit}</option>`,
+      ).join("")}</select></label>
+      <p class="hint">The PDF uses the current similarity and sale-information filters, then includes the most similar homes up to this limit.</p>
+    </div>
     <div class="actions">
       <a class="button-link" href="/print?${printQuery.toString()}">Print / Save as PDF</a>
       <button type="button" id="download-comps" class="secondary">Download comps (.xlsx)</button>
@@ -1228,17 +1400,30 @@ function renderWhatsNext(payload: CasePayload, printQuery: URLSearchParams): str
 }
 
 function renderResults(payload: CasePayload, query: URLSearchParams): void {
+  const isNewPayload = lastCasePayload !== payload;
   lastCasePayload = payload;
   lastCaseQuery = new URLSearchParams(query);
   selectedSimilarityMax = parseSimilarityMax(lastCaseQuery.get("maxSimilarity"));
+  selectedSaleFilter = parseComparableSaleFilter(lastCaseQuery.get("saleFilter"));
+  selectedPrintMaxComps = parsePrintComparableLimit(lastCaseQuery.get("maxComps"));
+  lastCaseQuery.set("saleFilter", selectedSaleFilter);
+  lastCaseQuery.set("maxComps", String(selectedPrintMaxComps));
+  if (isNewPayload) {
+    selectedComparablePage = 1;
+  }
   const storage = browserSessionStorage();
   if (storage) {
-    saveAssessmentSnapshot(storage, query, payload);
+    saveAssessmentSnapshot(storage, lastCaseQuery, payload);
   }
   const subject = payload.case.parcel;
-  const subjectAddress = [subject.address, subject.city, subject.zipCode]
-    .filter(Boolean)
-    .join(", ");
+  const hasStreetAddress = subject.address.trim().length > 0;
+  const subjectAddress = hasStreetAddress
+    ? [subject.address, subject.city, subject.zipCode].filter(Boolean).join(", ")
+    : "";
+  const subjectLocation = !hasStreetAddress
+    ? [subject.city, subject.zipCode].filter(Boolean).join(", ")
+    : "";
+  const subjectLocationLabel = subject.city ? "City / ZIP" : "ZIP code";
   const userValues = [
     payload.case.userEvidence.actualSqft
       ? `Actual sqft ${numberText(payload.case.userEvidence.actualSqft)}`
@@ -1250,43 +1435,72 @@ function renderResults(payload: CasePayload, query: URLSearchParams): void {
       ? `Actual improvement AV ${dollars(payload.case.userEvidence.actualImprovementAv)}`
       : "",
   ].filter(Boolean);
-  const printQuery = new URLSearchParams(query);
+  const printQuery = new URLSearchParams(lastCaseQuery);
   printQuery.set("pin", subject.pin);
+  const classLabel = formatPropertyClass(subject.propertyClass) || "Not available";
+  const stageSummary = assessmentStagesLabel(subject.assessmentStages);
+  const subjectSection = `<section class="subject panel">
+    <h2>Subject property</h2>
+    <dl>
+      <div><dt>PIN</dt><dd>${escapeHtml(subject.pinFormatted)}</dd></div>
+      ${subjectAddress ? `<div><dt>Address</dt><dd>${escapeHtml(subjectAddress)}</dd></div>` : ""}
+      ${subjectLocation ? `<div><dt>${subjectLocationLabel}</dt><dd>${escapeHtml(subjectLocation)}</dd></div>` : ""}
+      <div><dt class="heading-with-tooltip">Class / township ${infoTooltip(
+        "What class and township mean",
+        `Property class ${classLabel} identifies the Assessor's property type and assessment classification. ${subject.townshipName} is the Cook County assessment district used for comparable searches and filing schedules.`,
+      )}</dt><dd>${escapeHtml(classLabel)} / ${escapeHtml(subject.townshipName)}</dd></div>
+      <div><dt>Building sqft</dt><dd>${numberText(subject.buildingSqft)}</dd></div>
+      <div><dt>Land sqft</dt><dd>${numberText(subject.landSqft)}</dd></div>
+      <div><dt class="heading-with-tooltip">Assessment year ${infoTooltip(
+        "What assessment year means",
+        `This is the latest year with usable assessed values selected for the review. The displayed components use ${stageSummary}. It may differ from a county page that is showing an older certified year.`,
+      )}</dt><dd>${yearText(subject.assessmentYear)}</dd></div>
+      <div><dt class="heading-with-tooltip">Total AV ${infoTooltip(
+        "What Total AV means",
+        `Total assessed value is the parcel's Land AV plus Improvement AV. It is not estimated market value or the tax bill. This value uses the ${assessmentStageLabel(
+          subject.assessmentStages.total,
+        )} stage.`,
+      )}</dt><dd>${dollars(subject.currentAv)}</dd></div>
+      <div><dt class="heading-with-tooltip">Improvement AV ${infoTooltip(
+        "What Improvement AV means",
+        `Improvement assessed value is the portion assigned to buildings and other improvements, excluding land. Appeal Compass divides it by ${
+          subject.isMulticard
+            ? `the combined building area from ${subject.cardCount} reconciled property cards`
+            : "building square footage"
+        } for the uniformity screen. This value uses the ${assessmentStageLabel(
+          subject.assessmentStages.improvement,
+        )} stage.`,
+      )}</dt><dd>${dollars(subject.currentImprovementAv)}</dd></div>
+      <div><dt class="heading-with-tooltip">Land AV ${infoTooltip(
+        "What Land AV means",
+        `Land assessed value is the portion assigned to the parcel's land, separate from buildings. Appeal Compass checks it per land square foot as a separate diagnostic. This value uses the ${assessmentStageLabel(
+          subject.assessmentStages.land,
+        )} stage.`,
+      )}</dt><dd>${dollars(subject.currentLandAv)}</dd></div>
+    </dl>
+    ${
+      userValues.length
+        ? `<p class="tagline">${escapeHtml(userValues.join("; "))} - user-supplied.</p>`
+        : ""
+    }
+  </section>`;
 
   const results = document.querySelector<HTMLElement>("#results");
   if (!results) {
     return;
   }
   results.innerHTML = `
-    <section class="notice"><strong>${escapeHtml(payload.evidence.disclaimers[0])}</strong></section>
-    ${renderDeadlineInfo(payload)}
+    ${renderMissingEvidenceForm(payload)}
 
-    <section class="subject panel">
-      <h2>Subject property</h2>
-      <dl>
-        <div><dt>PIN</dt><dd>${escapeHtml(subject.pinFormatted)}</dd></div>
-        ${subjectAddress ? `<div><dt>Address</dt><dd>${escapeHtml(subjectAddress)}</dd></div>` : ""}
-        <div><dt>Class / township</dt><dd>${escapeHtml(subject.propertyClass)} / ${escapeHtml(subject.townshipName)}</dd></div>
-        <div><dt>Building sqft</dt><dd>${numberText(subject.buildingSqft)}</dd></div>
-        <div><dt>Land sqft</dt><dd>${numberText(subject.landSqft)}</dd></div>
-        <div><dt>Assessment year</dt><dd>${numberText(subject.assessmentYear)}</dd></div>
-        <div><dt>Total AV</dt><dd>${dollars(subject.currentAv)}</dd></div>
-        <div><dt>Improvement AV</dt><dd>${dollars(subject.currentImprovementAv)}</dd></div>
-        <div><dt>Land AV</dt><dd>${dollars(subject.currentLandAv)}</dd></div>
-      </dl>
-      <p class="hint">Total AV is context for value checks and savings estimates. Residential comparable evidence uses Improvement AV/sqft.</p>
-      ${
-        userValues.length
-          ? `<p class="tagline">${escapeHtml(userValues.join("; "))} - user-supplied.</p>`
-          : ""
-      }
-    </section>
+    <section class="notice"><strong>${escapeHtml(payload.evidence.disclaimers[0])}</strong></section>
+
+    ${renderComparables(payload)}
+
+    ${subjectSection}
 
     ${noticeList(payload)}
 
-    ${renderMissingEvidenceForm(payload)}
-
-    ${renderComparables(payload)}
+    ${renderDeadlineInfo(payload)}
 
     ${renderWhatsNext(payload, printQuery)}
   `;
@@ -1313,9 +1527,15 @@ async function loadCase(params: URLSearchParams): Promise<void> {
   } catch (error) {
     const target = document.querySelector<HTMLElement>("#results");
     if (target) {
-      target.innerHTML = `<section class="error" role="alert">${escapeHtml(
-        error instanceof Error ? error.message : "The case could not be loaded.",
-      )}</section>`;
+      const message = error instanceof Error ? error.message : "The case could not be loaded.";
+      const linkedMessage =
+        error instanceof ApiRequestError && error.detail.kind === "unsupported_property"
+          ? escapeHtml(message).replace(
+              "reach out here.",
+              '<button type="button" id="open-contact-from-unsupported" class="link-button">reach out here</button>.',
+            )
+          : escapeHtml(message);
+      target.innerHTML = `<section class="error" role="alert">${linkedMessage}</section>`;
     }
   } finally {
     stop();
@@ -1394,10 +1614,7 @@ function browserSessionStorage(): Storage | null {
 
 async function submitReport(form: HTMLFormElement): Promise<void> {
   if (!REPORTING_ENABLED) {
-    setReportStatus(
-      "Problem reporting is disabled until the Turnstile site key is configured.",
-      true,
-    );
+    setReportStatus("Feedback is disabled until the Turnstile site key is configured.", true);
     return;
   }
   if (!form.reportValidity()) {
@@ -1405,7 +1622,7 @@ async function submitReport(form: HTMLFormElement): Promise<void> {
   }
   const data = new FormData(form);
   const turnstileToken = data.get("cf-turnstile-response");
-  setReportStatus("Submitting report...");
+  setReportStatus("Submitting feedback...");
   const response = await fetch("/api/report", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1422,13 +1639,13 @@ async function submitReport(form: HTMLFormElement): Promise<void> {
   if (!response.ok || !result.ok) {
     setReportStatus(
       result.ok
-        ? "The report could not be submitted."
-        : (result.error?.message ?? "The report could not be submitted."),
+        ? "The feedback could not be submitted."
+        : (result.error?.message ?? "The feedback could not be submitted."),
       true,
     );
     return;
   }
-  setReportStatus(`Report submitted: ${result.issueUrl}`);
+  setReportStatus(`Feedback submitted: ${result.issueUrl}`);
   form.reset();
 }
 
@@ -1441,14 +1658,12 @@ async function submitContact(form: HTMLFormElement): Promise<void> {
     return;
   }
   const data = new FormData(form);
-  const topic = data.get("topic");
   const turnstileToken = data.get("cf-turnstile-response");
   setContactStatus("Sending message...");
   const response = await fetch("/api/contact", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      topic: data.get("topic"),
       name: data.get("name"),
       email: data.get("email"),
       message: data.get("message"),
@@ -1469,10 +1684,6 @@ async function submitContact(form: HTMLFormElement): Promise<void> {
   }
   setContactStatus(result.message ?? "Message sent.");
   form.reset();
-  const topicInput = form.querySelector<HTMLInputElement>("#contact-topic");
-  if (topicInput && typeof topic === "string") {
-    topicInput.value = topic;
-  }
 }
 
 function updateSimilarityFilter(value: string): void {
@@ -1485,6 +1696,43 @@ function updateSimilarityFilter(value: string): void {
   } else {
     lastCaseQuery.set("maxSimilarity", similarityFilterValue(max));
   }
+  selectedComparablePage = 1;
+  renderResults(lastCasePayload, lastCaseQuery);
+}
+
+function updateSaleFilter(value: string): void {
+  if (!lastCasePayload || !lastCaseQuery) {
+    return;
+  }
+  selectedSaleFilter = parseComparableSaleFilter(value);
+  lastCaseQuery.set("saleFilter", selectedSaleFilter);
+  selectedComparablePage = 1;
+  renderResults(lastCasePayload, lastCaseQuery);
+}
+
+function updateComparablePageSize(value: string): void {
+  if (!lastCasePayload || !lastCaseQuery) {
+    return;
+  }
+  selectedRowsPerPage = parseComparablePageSize(value);
+  selectedComparablePage = 1;
+  renderResults(lastCasePayload, lastCaseQuery);
+}
+
+function updatePrintComparableLimit(value: string): void {
+  if (!lastCasePayload || !lastCaseQuery) {
+    return;
+  }
+  selectedPrintMaxComps = parsePrintComparableLimit(value);
+  lastCaseQuery.set("maxComps", String(selectedPrintMaxComps));
+  renderResults(lastCasePayload, lastCaseQuery);
+}
+
+function moveComparablePage(delta: number): void {
+  if (!lastCasePayload || !lastCaseQuery) {
+    return;
+  }
+  selectedComparablePage += delta;
   renderResults(lastCasePayload, lastCaseQuery);
 }
 
@@ -1501,6 +1749,27 @@ function submitMissingEvidence(form: HTMLFormElement): void {
     if (value) {
       params.set(element.name, value);
     }
+  }
+  void loadCase(params);
+}
+
+function submitValueEvidence(form: HTMLFormElement): void {
+  if (!lastCaseQuery || !form.reportValidity()) {
+    return;
+  }
+  const evidenceType = formValue(form, "valueEvidenceType");
+  const amount = formValue(form, "valueAmount");
+  const date = formValue(form, "valueDate");
+  const params = new URLSearchParams(lastCaseQuery);
+  for (const name of ["purchasePrice", "purchaseDate", "appraisalValue", "appraisalDate"]) {
+    params.delete(name);
+  }
+  if (evidenceType === "purchase") {
+    params.set("purchasePrice", amount);
+    params.set("purchaseDate", date);
+  } else if (evidenceType === "appraisal") {
+    params.set("appraisalValue", amount);
+    params.set("appraisalDate", date);
   }
   void loadCase(params);
 }
@@ -1610,6 +1879,10 @@ document.addEventListener("submit", (event) => {
     event.preventDefault();
     submitMissingEvidence(form);
   }
+  if (form instanceof HTMLFormElement && form.id === "value-evidence-form") {
+    event.preventDefault();
+    submitValueEvidence(form);
+  }
 });
 
 document.addEventListener("change", (event) => {
@@ -1627,6 +1900,15 @@ document.addEventListener("change", (event) => {
     if (target instanceof HTMLSelectElement && target.id === "similarity-filter") {
       updateSimilarityFilter(target.value);
     }
+    if (target instanceof HTMLSelectElement && target.id === "sale-filter") {
+      updateSaleFilter(target.value);
+    }
+    if (target instanceof HTMLSelectElement && target.id === "comps-page-size") {
+      updateComparablePageSize(target.value);
+    }
+    if (target instanceof HTMLSelectElement && target.id === "pdf-comps-limit") {
+      updatePrintComparableLimit(target.value);
+    }
   }
 });
 
@@ -1643,7 +1925,13 @@ document.addEventListener("click", (event) => {
   if (target instanceof HTMLElement && target.id === "download-comps") {
     downloadComparableWorkbook();
   }
-  if (target instanceof HTMLElement && target.id === "report-problem") {
+  if (target instanceof HTMLElement && target.id === "comps-prev") {
+    moveComparablePage(-1);
+  }
+  if (target instanceof HTMLElement && target.id === "comps-next") {
+    moveComparablePage(1);
+  }
+  if (target instanceof HTMLElement && target.id === "open-feedback") {
     openReportPanel();
   }
   if (
@@ -1655,14 +1943,14 @@ document.addEventListener("click", (event) => {
   if (target instanceof HTMLElement && target.id === "open-contact-from-refusal") {
     event.preventDefault();
     closeEntityRefusalPanel();
-    openContactPanel("commercial_interest");
+    openContactPanel();
+  }
+  if (target instanceof HTMLElement && target.id === "open-contact-from-unsupported") {
+    openContactPanel();
   }
   if (target instanceof HTMLElement && target.id === "open-commercial-interest") {
     event.preventDefault();
-    openContactPanel("commercial_interest");
-  }
-  if (target instanceof HTMLElement && target.id === "suggest-feature") {
-    openContactPanel("feature_suggestion");
+    openContactPanel();
   }
   if (
     target instanceof HTMLElement &&

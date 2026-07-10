@@ -1,4 +1,6 @@
+import { parseComparableSaleFilter } from "../domain/comparableSaleFilter";
 import { NotFoundError, UnsupportedPropertyError, UserInputError } from "../domain/errors";
+import { parsePrintComparableLimit } from "../domain/printOptions";
 import { GITHUB_ISSUES_REPOSITORY } from "../domain/publicConfig";
 import { parseSimilarityMax } from "../domain/similarityBands";
 import { appShell } from "./appShell";
@@ -11,25 +13,23 @@ import { buildPrintReport } from "./printReport";
 import { type CaseRepository, SocrataRepository } from "./repository";
 import { SocrataClient, friendlyDataError } from "./socrataClient";
 
-export interface Env {
-  ASSETS?: Fetcher;
-  SOCRATA_APP_TOKEN?: string;
+interface OptionalSecrets {
   TURNSTILE_SECRET_KEY?: string;
   GITHUB_ISSUES_TOKEN?: string;
   RESEND_API_KEY?: string;
 }
 
+export type RuntimeEnv = Partial<Env> & OptionalSecrets;
+
 const ASSESSMENT_CONCURRENCY = 4;
 const ASSESSMENT_QUEUE_TIMEOUT_MS = 60_000;
 const REPORT_PAYLOAD_LIMIT = 10_000;
-const REPORT_RATE_LIMIT = 5;
-const REPORT_RATE_WINDOW_MS = 60 * 60 * 1000;
 const CONTACT_RECIPIENT = "tommaso.desantis@mail.com";
+const EXPECTED_GITHUB_ISSUE_ACTOR = "tdsdesa-bot";
 const RESEND_EMAILS_URL = "https://api.resend.com/emails";
 const QUEUE_TIMEOUT_MESSAGE =
   "Appeal Compass is busy helping other homeowners right now. Your assessment did not start within a minute. Please try again in a moment.";
 const sharedAssessmentLimiter = new ConcurrencyLimiter(ASSESSMENT_CONCURRENCY);
-const reportRateLimit = new Map<string, { count: number; resetAt: number }>();
 
 const REPORT_CATEGORIES = {
   wrong_deadline: { label: "Wrong deadline", githubLabel: "wrong-deadline" },
@@ -48,18 +48,19 @@ interface WorkerOptions {
   assessmentLimiter?: ConcurrencyLimiter;
   queueTimeoutMs?: number;
   caseBuilder?: typeof buildCasePayload;
-  repositoryFactory?: (url: URL, env: Env) => RepositorySelection;
+  repositoryFactory?: (url: URL, env: RuntimeEnv) => RepositorySelection;
 }
 
 interface WorkerHandler {
-  fetch(request: Request, env: Env): Promise<Response>;
+  fetch(request: Request, env: RuntimeEnv): Promise<Response>;
 }
 
-function json(data: unknown, status = 200): Response {
+function json(data: unknown, status = 200, headers: HeadersInit = {}): Response {
   return Response.json(data, {
     status,
     headers: {
       "cache-control": "no-store",
+      ...headers,
     },
   });
 }
@@ -84,19 +85,18 @@ function clientKey(request: Request): string {
   return request.headers.get("cf-connecting-ip") ?? "unknown";
 }
 
-function isRateLimited(request: Request): boolean {
-  const key = clientKey(request);
-  const now = Date.now();
-  const current = reportRateLimit.get(key);
-  if (!current || current.resetAt <= now) {
-    reportRateLimit.set(key, { count: 1, resetAt: now + REPORT_RATE_WINDOW_MS });
+async function isRateLimited(limiter: RateLimit | undefined, request: Request): Promise<boolean> {
+  if (!limiter) {
     return false;
   }
-  if (current.count >= REPORT_RATE_LIMIT) {
-    return true;
-  }
-  current.count += 1;
-  return false;
+  const result = await limiter.limit({ key: clientKey(request) });
+  return !result.success;
+}
+
+function rateLimitedResponse(message: string): Response {
+  return json({ ok: false, error: { kind: "rate_limited", message } }, 429, {
+    "retry-after": "60",
+  });
 }
 
 async function reportJson(request: Request): Promise<Record<string, unknown>> {
@@ -131,7 +131,12 @@ async function contactJson(request: Request): Promise<Record<string, unknown>> {
   return parsed as Record<string, unknown>;
 }
 
-async function verifyTurnstile(token: string, request: Request, secret: string): Promise<boolean> {
+async function verifyTurnstile(
+  token: string,
+  request: Request,
+  secret: string,
+  expectedAction: string,
+): Promise<boolean> {
   const form = new FormData();
   form.set("secret", secret);
   form.set("response", token);
@@ -139,20 +144,50 @@ async function verifyTurnstile(token: string, request: Request, secret: string):
   if (remoteIp) {
     form.set("remoteip", remoteIp);
   }
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    body: form,
-  });
-  const result = (await response.json().catch(() => ({}))) as { success?: boolean };
-  return response.ok && result.success === true;
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: form,
+    });
+    const result = (await response.json().catch(() => ({}))) as {
+      success?: boolean;
+      action?: string;
+    };
+    return response.ok && result.success === true && result.action === expectedAction;
+  } catch {
+    return false;
+  }
 }
+
+type GithubIssueResult = { ok: true; issueUrl: string } | { ok: false; reason: "actor" | "github" };
 
 async function createGithubIssue(input: {
   token: string;
   category: (typeof REPORT_CATEGORIES)[keyof typeof REPORT_CATEGORIES];
   description: string;
   context: string;
-}): Promise<string | null> {
+}): Promise<GithubIssueResult> {
+  const commonHeaders = {
+    accept: "application/vnd.github+json",
+    authorization: `Bearer ${input.token}`,
+    "user-agent": "appeal-compass",
+  };
+  let actorResponse: Response;
+  try {
+    actorResponse = await fetch("https://api.github.com/user", {
+      headers: commonHeaders,
+    });
+  } catch {
+    return { ok: false, reason: "github" };
+  }
+  const actor = (await actorResponse.json().catch(() => ({}))) as { login?: string };
+  if (
+    !actorResponse.ok ||
+    actor.login?.toLowerCase() !== EXPECTED_GITHUB_ISSUE_ACTOR.toLowerCase()
+  ) {
+    return { ok: false, reason: actorResponse.ok ? "actor" : "github" };
+  }
+
   const body = [
     "Submitted through the Appeal Compass report form.",
     "",
@@ -164,25 +199,30 @@ async function createGithubIssue(input: {
     "Context:",
     input.context || "Not provided",
   ].join("\n");
-  const response = await fetch(`https://api.github.com/repos/${GITHUB_ISSUES_REPOSITORY}/issues`, {
-    method: "POST",
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${input.token}`,
-      "content-type": "application/json",
-      "user-agent": "appeal-compass",
-    },
-    body: JSON.stringify({
-      title: `[${input.category.label}] Appeal Compass report`,
-      body,
-      labels: ["appeal-compass-report", input.category.githubLabel],
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`https://api.github.com/repos/${GITHUB_ISSUES_REPOSITORY}/issues`, {
+      method: "POST",
+      headers: {
+        ...commonHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        title: `[${input.category.label}] Appeal Compass report`,
+        body,
+        labels: ["appeal-compass-report", input.category.githubLabel],
+      }),
+    });
+  } catch {
+    return { ok: false, reason: "github" };
+  }
   if (!response.ok) {
-    return null;
+    return { ok: false, reason: "github" };
   }
   const result = (await response.json().catch(() => ({}))) as { html_url?: string };
-  return result.html_url ?? null;
+  return result.html_url
+    ? { ok: true, issueUrl: result.html_url }
+    : { ok: false, reason: "github" };
 }
 
 function validOptionalEmail(email: string): boolean {
@@ -191,13 +231,11 @@ function validOptionalEmail(email: string): boolean {
 
 async function sendContactEmail(input: {
   token: string;
-  topic: string;
   name: string;
   email: string;
   message: string;
 }): Promise<boolean> {
-  const topicLabel =
-    input.topic === "feature_suggestion" ? "feature suggestion" : "commercial-property inquiry";
+  const topicLabel = "commercial-property inquiry";
   const body: Record<string, unknown> = {
     from: "Appeal Compass <onboarding@resend.dev>",
     to: [CONTACT_RECIPIENT],
@@ -215,22 +253,26 @@ async function sendContactEmail(input: {
   if (input.email) {
     body.reply_to = input.email;
   }
-  const response = await fetch(RESEND_EMAILS_URL, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${input.token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  return response.ok;
+  try {
+    const response = await fetch(RESEND_EMAILS_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${input.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 function cacheStore() {
   return typeof caches === "undefined" ? sharedMemoryCache : new CloudflareCacheStore();
 }
 
-function repositoryFor(url: URL, env: Env): RepositorySelection {
+function repositoryFor(url: URL, env: RuntimeEnv): RepositorySelection {
   if (url.searchParams.get("demo") === "1" || url.searchParams.get("demo") === "true") {
     return { repo: new FixtureRepository(), demo: true };
   }
@@ -297,7 +339,7 @@ function queueStatus(limiter: ConcurrencyLimiter) {
   };
 }
 
-async function handleReport(request: Request, env: Env): Promise<Response> {
+async function handleReport(request: Request, env: RuntimeEnv): Promise<Response> {
   if (!env.TURNSTILE_SECRET_KEY || !env.GITHUB_ISSUES_TOKEN) {
     return json(
       {
@@ -310,17 +352,8 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
       503,
     );
   }
-  if (isRateLimited(request)) {
-    return json(
-      {
-        ok: false,
-        error: {
-          kind: "rate_limited",
-          message: "Too many reports from this connection. Try again later.",
-        },
-      },
-      429,
-    );
+  if (await isRateLimited(env.SUBMISSION_RATE_LIMITER, request)) {
+    return rateLimitedResponse("Too many submissions from this connection. Try again shortly.");
   }
 
   let payload: Record<string, unknown>;
@@ -339,7 +372,13 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     return json({ ok: false, error: { kind: "input", message: "Choose a report category." } }, 400);
   }
   if (!description) {
-    return json({ ok: false, error: { kind: "input", message: "Describe the problem." } }, 400);
+    return json(
+      {
+        ok: false,
+        error: { kind: "input", message: "Describe the problem or feature request." },
+      },
+      400,
+    );
   }
   if (!turnstileToken) {
     return json(
@@ -348,7 +387,12 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const turnstileOk = await verifyTurnstile(turnstileToken, request, env.TURNSTILE_SECRET_KEY);
+  const turnstileOk = await verifyTurnstile(
+    turnstileToken,
+    request,
+    env.TURNSTILE_SECRET_KEY,
+    "feedback",
+  );
   if (!turnstileOk) {
     return json(
       { ok: false, error: { kind: "turnstile", message: "Verification failed. Try again." } },
@@ -356,28 +400,31 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const issueUrl = await createGithubIssue({
+  const issue = await createGithubIssue({
     token: env.GITHUB_ISSUES_TOKEN,
     category,
     description,
     context,
   });
-  if (!issueUrl) {
+  if (!issue.ok) {
     return json(
       {
         ok: false,
         error: {
-          kind: "github",
-          message: "The report could not be submitted right now. Try again later.",
+          kind: issue.reason === "actor" ? "configuration" : "github",
+          message:
+            issue.reason === "actor"
+              ? "Issue reporting must be authenticated as tdsdesa-bot."
+              : "The report could not be submitted right now. Try again later.",
         },
       },
-      502,
+      issue.reason === "actor" ? 503 : 502,
     );
   }
-  return json({ ok: true, issueUrl });
+  return json({ ok: true, issueUrl: issue.issueUrl });
 }
 
-async function handleContact(request: Request, env: Env): Promise<Response> {
+async function handleContact(request: Request, env: RuntimeEnv): Promise<Response> {
   if (!env.TURNSTILE_SECRET_KEY || !env.RESEND_API_KEY) {
     return json(
       {
@@ -390,17 +437,8 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
       503,
     );
   }
-  if (isRateLimited(request)) {
-    return json(
-      {
-        ok: false,
-        error: {
-          kind: "rate_limited",
-          message: "Too many contact messages from this connection. Try again later.",
-        },
-      },
-      429,
-    );
+  if (await isRateLimited(env.SUBMISSION_RATE_LIMITER, request)) {
+    return rateLimitedResponse("Too many submissions from this connection. Try again shortly.");
   }
 
   let payload: Record<string, unknown>;
@@ -413,7 +451,6 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
   const name = sanitizeText(payload.name, 120);
   const email = sanitizeText(payload.email, 254);
   const message = sanitizeText(payload.message, 4000);
-  const topic = sanitizeText(payload.topic, 80);
   const turnstileToken = sanitizeText(payload.turnstileToken, 2048);
   if (!message) {
     return json({ ok: false, error: { kind: "input", message: "Write a message." } }, 400);
@@ -434,7 +471,12 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const turnstileOk = await verifyTurnstile(turnstileToken, request, env.TURNSTILE_SECRET_KEY);
+  const turnstileOk = await verifyTurnstile(
+    turnstileToken,
+    request,
+    env.TURNSTILE_SECRET_KEY,
+    "commercial_interest",
+  );
   if (!turnstileOk) {
     return json(
       { ok: false, error: { kind: "turnstile", message: "Verification failed. Try again." } },
@@ -444,7 +486,6 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
 
   const sent = await sendContactEmail({
     token: env.RESEND_API_KEY,
-    topic,
     name,
     email,
     message,
@@ -481,7 +522,7 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
   }
 
   return {
-    async fetch(request: Request, env: Env): Promise<Response> {
+    async fetch(request: Request, env: RuntimeEnv): Promise<Response> {
       const url = new URL(request.url);
 
       if (url.pathname === "/api/health") {
@@ -517,6 +558,11 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
 
       if (url.pathname === "/api/case") {
         try {
+          if (await isRateLimited(env.CASE_RATE_LIMITER, request)) {
+            return rateLimitedResponse(
+              "Too many property searches from this connection. Try again shortly.",
+            );
+          }
           if (!url.searchParams.get("pin")) {
             throw new UserInputError("Enter a Cook County PIN.");
           }
@@ -529,13 +575,22 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
 
       if (url.pathname === "/print") {
         try {
+          if (await isRateLimited(env.CASE_RATE_LIMITER, request)) {
+            return rateLimitedResponse(
+              "Too many evidence-packet requests from this connection. Try again shortly.",
+            );
+          }
           if (!url.searchParams.get("pin")) {
             throw new UserInputError("Enter a Cook County PIN.");
           }
           const { repo, demo } = repositoryFactory(url, env);
           const payload = await buildQueuedCasePayload(repo, url.searchParams, demo);
           return new Response(
-            buildPrintReport(payload, parseSimilarityMax(url.searchParams.get("maxSimilarity"))),
+            buildPrintReport(payload, {
+              maxSimilarity: parseSimilarityMax(url.searchParams.get("maxSimilarity")),
+              saleFilter: parseComparableSaleFilter(url.searchParams.get("saleFilter")),
+              maxComps: parsePrintComparableLimit(url.searchParams.get("maxComps")),
+            }),
             {
               headers: { "content-type": "text/html;charset=utf-8" },
             },
@@ -575,4 +630,4 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
 
 const worker = createWorker();
 
-export default worker satisfies ExportedHandler<Env>;
+export default worker satisfies ExportedHandler<RuntimeEnv>;
