@@ -3,8 +3,9 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 
 export type {
   AssessmentHistoryRow,
-  CaseFile,
   Comparable,
   Parcel,
+  PropertyCardDetail,
   Sale,
+  SubjectRecord,
 } from "./models";

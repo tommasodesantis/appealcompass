@@ -1,13 +1,13 @@
-import { defaultUserEvidence } from "./models";
 import type { AssessmentStage, AssessmentStages } from "./models";
 import { formatPin, normalizePin } from "./pin";
 import type {
   AssessmentHistoryRow,
-  CaseFile,
   Comparable,
   JsonValue,
   Parcel,
+  PropertyCardDetail,
   Sale,
+  SubjectRecord,
 } from "./serdeTypes";
 
 type JsonRecord = Record<string, JsonValue>;
@@ -114,6 +114,7 @@ export function comparableFromJson(raw: JsonRecord): Comparable {
     pinFormatted: formatPin(pin),
     address: stringValue(raw.address),
     propertyClass: nullableString(raw.property_class ?? raw.class),
+    townshipCode: nullableString(raw.township_code),
     buildingSqft: numberValue(raw.building_sqft),
     yearBuilt: intValue(raw.year_built),
     saleDate: nullableString(raw.sale_date),
@@ -137,7 +138,11 @@ export function comparableFromJson(raw: JsonRecord): Comparable {
   };
 }
 
-export function caseFileFromJson(rawInput: unknown): CaseFile {
+export interface FixtureCaseData extends SubjectRecord {
+  comparables: Comparable[];
+}
+
+export function caseFileFromJson(rawInput: unknown): FixtureCaseData {
   const raw = record(rawInput);
   const parcel = parcelFromJson(record(raw.parcel));
   const assessmentHistory: AssessmentHistoryRow[] = array(raw.assessment_history).map((item) => {
@@ -167,13 +172,30 @@ export function caseFileFromJson(rawInput: unknown): CaseFile {
     })
     .filter((item): item is Sale => item !== null);
   const dataWarnings = array(raw.data_warnings).map((item) => String(item));
+  const propertyCards: PropertyCardDetail[] = array(raw.property_cards).map((item, index) => {
+    const row = record(item);
+    return {
+      cardNumber: stringValue(row.card_number || index + 1),
+      propertyClass: nullableString(row.property_class),
+      buildingSqft: numberValue(row.building_sqft),
+      yearBuilt: intValue(row.year_built),
+    };
+  });
+  if (propertyCards.length === 0 && parcel.cardCount > 0) {
+    propertyCards.push({
+      cardNumber: "1",
+      propertyClass: parcel.propertyClass || null,
+      buildingSqft: parcel.buildingSqft,
+      yearBuilt: parcel.yearBuilt,
+    });
+  }
 
   return {
-    parcel,
+    publicParcel: parcel,
+    propertyCards,
     assessmentHistory,
     comparables,
     subjectSales,
-    userEvidence: defaultUserEvidence(),
     dataWarnings,
   };
 }

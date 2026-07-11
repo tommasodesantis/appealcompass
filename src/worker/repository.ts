@@ -5,18 +5,19 @@ import type {
   AssessmentHistoryRow,
   AssessmentStage,
   AssessmentStages,
-  CaseFile,
   Comparable,
   Parcel,
+  PropertyCardDetail,
   Sale,
+  SubjectRecord,
 } from "../domain/models";
-import { defaultUserEvidence } from "../domain/models";
 import { formatPin, normalizePin } from "../domain/pin";
 import { propertyClassDecision } from "../domain/propertyClasses";
 import type { JsonRecord, SocrataClient, SocrataResponse, SocrataWarning } from "./socrataClient";
 
 export interface CaseRepository {
-  loadCaseByPin(pin: string): Promise<CaseFile>;
+  loadSubjectByPin(pin: string): Promise<SubjectRecord>;
+  loadComparables(parcel: Parcel): Promise<[Comparable[], string[]]>;
 }
 
 const SUBJECT_MAX_ROWS = 100;
@@ -266,6 +267,7 @@ interface AggregatedCharacteristics {
   cardCount: number;
   cardClasses: string[];
   characteristicsReconciled: boolean;
+  propertyCards: PropertyCardDetail[];
 }
 
 function aggregateCharacteristics(
@@ -285,6 +287,7 @@ function aggregateCharacteristics(
       cardCount: 0,
       cardClasses: fallbackClass ? [fallbackClass] : [],
       characteristicsReconciled: false,
+      propertyCards: [],
     };
   }
 
@@ -322,6 +325,13 @@ function aggregateCharacteristics(
   );
   const expectedCountMatches = expectedCards === 0 || expectedCards === uniqueRows.length;
   const allCardsHaveBuildingArea = buildingValues.length === uniqueRows.length;
+  const propertyCards = uniqueRows.map((row, index) => ({
+    cardNumber:
+      nullableString(pick(row, "card")) ?? nullableString(pick(row, "row_id")) ?? String(index + 1),
+    propertyClass: nullableString(pick(row, "class")) ?? fallbackClass,
+    buildingSqft: numberValue(pick(row, "char_bldg_sf", "bldg_sf")),
+    yearBuilt: intValue(pick(row, "char_yrblt", "yrblt")),
+  }));
 
   return {
     buildingSqft:
@@ -341,6 +351,7 @@ function aggregateCharacteristics(
       allClassesSupported &&
       expectedCountMatches &&
       (!isMulticard || allCardsHaveBuildingArea),
+    propertyCards,
   };
 }
 
@@ -421,7 +432,7 @@ function responseRows(response: SocrataResponse, warnings: string[], pin: string
 export class SocrataRepository implements CaseRepository {
   constructor(private readonly client: SocrataClient) {}
 
-  async loadCaseByPin(pin: string): Promise<CaseFile> {
+  async loadSubjectByPin(pin: string): Promise<SubjectRecord> {
     const normalized = normalizePin(pin);
     const warnings: string[] = [];
 
@@ -653,17 +664,14 @@ export class SocrataRepository implements CaseRepository {
       );
     }
 
-    const [comparables, comparableWarnings] = await this.loadComparables(parcel);
-    warnings.push(...comparableWarnings);
     const [subjectSales, salesWarnings] = await this.loadSales(normalized);
     warnings.push(...salesWarnings);
 
     return {
-      parcel,
+      publicParcel: parcel,
+      propertyCards: characteristics.propertyCards,
       assessmentHistory,
-      comparables,
       subjectSales,
-      userEvidence: defaultUserEvidence(),
       dataWarnings: unique(warnings),
     };
   }
@@ -723,15 +731,16 @@ export class SocrataRepository implements CaseRepository {
     return [salesByPin, warnings] as const;
   }
 
-  private async loadComparables(parcel: Parcel): Promise<[Comparable[], string[]]> {
+  async loadComparables(parcel: Parcel): Promise<[Comparable[], string[]]> {
     const warnings: string[] = [];
-    if (!parcel.townshipCode || !parcel.propertyClass) {
+    const townshipCode = parcel.townshipCode ?? (await this.resolveTownshipCode(parcel));
+    if (!townshipCode || !parcel.propertyClass) {
       return [
         [],
         ["Comparable search was skipped because township code or property class was unavailable."],
       ];
     }
-    const where = `township_code='${parcel.townshipCode}' AND class='${parcel.propertyClass}'`;
+    const where = `township_code='${townshipCode}' AND class='${parcel.propertyClass}'`;
     const yearWhere = `${where} AND year='${ASSESSMENT_YEAR}'`;
 
     let comparableCharacteristicsYear: number | null = ASSESSMENT_YEAR;
@@ -886,6 +895,7 @@ export class SocrataRepository implements CaseRepository {
         pinFormatted: formatPin(compPin),
         address: "",
         propertyClass,
+        townshipCode: nullableString(pick(universe, "township_code")) ?? townshipCode,
         buildingSqft: characteristics.buildingSqft,
         yearBuilt: characteristics.yearBuilt,
         saleDate: sale?.saleDate ?? null,
@@ -916,6 +926,22 @@ export class SocrataRepository implements CaseRepository {
       );
     }
     return [comps, warnings];
+  }
+
+  private async resolveTownshipCode(parcel: Parcel): Promise<string | null> {
+    if (!parcel.townshipName.trim()) return null;
+    const escapedTownship = parcel.townshipName.replace(/'/g, "''");
+    const escapedClass = parcel.propertyClass.replace(/'/g, "''");
+    const response = await this.client.fetchAll(
+      "parcel_universe",
+      {
+        $select: "township_code,township_name,class,year",
+        $where: `township_name='${escapedTownship}' AND class='${escapedClass}' AND year='${ASSESSMENT_YEAR}'`,
+        $order: "township_code",
+      },
+      { maxRows: SUBJECT_MAX_ROWS },
+    );
+    return nullableString(pick(response.rows[0] ?? {}, "township_code"));
   }
 }
 

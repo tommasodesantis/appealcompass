@@ -2,13 +2,19 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { caseFileFromJson } from "./caseSerde";
-import type { CaseFile, Comparable } from "./models";
+import type { AnalysisCase, Comparable } from "./models";
+import { applySubjectCorrections } from "./subjectCorrections";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-export function loadFixtureCase(pin: string): CaseFile {
+export function loadFixtureCase(pin: string): AnalysisCase {
   const raw = JSON.parse(readFileSync(join(root, "fixtures", "cases", `${pin}.json`), "utf8"));
-  return caseFileFromJson(raw);
+  const fixture = caseFileFromJson(raw);
+  return {
+    ...fixture,
+    ...applySubjectCorrections(fixture.publicParcel, []),
+    subjectValueEvidence: null,
+  };
 }
 
 export function loadAuthorityCrosscheck(): unknown {
@@ -23,6 +29,7 @@ export function makeComparable(overrides: Partial<Comparable>): Comparable {
     pinFormatted: "03-00-000-099-0000",
     address: "TEST ST",
     propertyClass: "203",
+    townshipCode: "01",
     buildingSqft: 1800,
     yearBuilt: 1924,
     saleDate: null,

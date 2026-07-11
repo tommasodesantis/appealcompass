@@ -567,7 +567,6 @@ html[data-enhanced="false"] .tooltip:hover .tooltip-bubble {
 }
 
 .status-pill,
-.evidence-level,
 .notice-count,
 .argument-strength,
 .comparison {
@@ -583,7 +582,6 @@ html[data-enhanced="false"] .tooltip:hover .tooltip-bubble {
 
 .status-open,
 .status-urgent,
-.level-strong,
 .comparison.lower {
   background: #dff3ea;
   color: #075143;
@@ -591,8 +589,6 @@ html[data-enhanced="false"] .tooltip:hover .tooltip-bubble {
 
 .status-upcoming,
 .status-needs_input,
-.level-limited,
-.level-moderate,
 .comparison.neutral {
   background: #fff0c8;
   color: #704611;
@@ -701,11 +697,6 @@ html[data-enhanced="false"] .tooltip:hover .tooltip-bubble {
 
 .evidence-heading {
   align-items: center;
-}
-
-.evidence-level {
-  max-width: 14rem;
-  text-align: center;
 }
 
 .evidence-verdict {
@@ -1266,4 +1257,203 @@ th {
 *::before,
 *::after {
   border-radius: 0 !important;
+}
+
+.subject-review-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.provenance-label,
+.comparable-table small,
+.evidence-option small {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.provenance-label {
+  color: var(--accent-strong);
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.multicard-note,
+.missing-summary {
+  margin: 1rem 0;
+  border-left: 4px solid var(--gold);
+  padding: 0.75rem 1rem;
+  background: var(--warning);
+}
+
+.correction-grid,
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.correction-row {
+  margin-bottom: 0.75rem;
+}
+
+.correction-row .remove-correction {
+  margin-top: 0.75rem;
+}
+
+.analysis-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.summary-card {
+  min-height: 0;
+  border: 1px solid var(--line);
+  padding: 0.9rem;
+}
+
+.summary-card > strong {
+  display: block;
+  font-family: "Clash Grotesk", "Arial Narrow", sans-serif;
+  font-size: 1.1rem;
+}
+
+.summary-card ul {
+  margin-bottom: 0;
+}
+
+.table-controls {
+  display: grid;
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.table-controls fieldset {
+  padding: 0.75rem;
+}
+
+.table-controls .checks {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sort-button {
+  min-height: 2rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.comparable-table {
+  min-width: 96rem;
+}
+
+.comparable-table input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+}
+
+.evidence-options fieldset {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.evidence-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.75rem 0;
+}
+
+.evidence-option input {
+  width: auto;
+  min-height: auto;
+  margin-top: 0.2rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  margin-left: 0.35rem;
+  border: 1px solid currentColor;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.status-promising {
+  color: #075143;
+}
+
+.status-potentially_useful,
+.status-weak_or_incomplete {
+  color: #704611;
+}
+
+.status-does_not_support_reduction,
+.status-unavailable {
+  color: #8b2922;
+}
+
+.calculation-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.calculation-card {
+  border: 1px solid var(--line);
+  padding: 1rem;
+}
+
+.calculation-card dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.packet-evidence {
+  break-inside: avoid;
+  border-top: 1px solid #bbb;
+  padding-top: 0.5rem;
+}
+
+.subject-values {
+  min-width: 56rem;
+}
+
+@media (max-width: 900px) {
+  .subject-review-grid,
+  .summary-grid,
+  .correction-grid,
+  .calculation-card dl,
+  .table-controls .checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .subject-review-grid,
+  .summary-grid,
+  .correction-grid,
+  .calculation-card dl,
+  .table-controls .checks {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-actions,
+  .analysis-actions button,
+  .selection-actions,
+  .selection-actions button {
+    width: 100%;
+  }
 }

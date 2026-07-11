@@ -11,9 +11,13 @@ import { makeComparable } from "./testHelpers";
 function exhibit(saleDate: string | null, salePrice: number | null): ComparableExhibit {
   return {
     comparable: makeComparable({ saleDate, salePrice }),
-    avPerSqft: 20,
+    improvementAvPerSqft: 20,
+    landAvPerSqft: null,
+    salePricePerSqft: salePrice === null ? null : salePrice / 1800,
     distanceKm: 0.5,
     similarity: 0.1,
+    band: "excellent",
+    recentSale: saleDate === "2024-05-01",
   };
 }
 

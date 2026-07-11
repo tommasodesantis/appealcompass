@@ -47,8 +47,8 @@ Refresh these constants before each assessment session and before presenting the
 - Confirm the field mappings for PIN, class, township, township code, neighborhood, coordinates,
   building square footage, land square footage, year built, style inputs, amenities, assessed-value
   columns, and sale fields.
-- Re-run tests for configured-year fallback, latest value-bearing AV fallback, removed address
-  search, PIN-only comparable labels, and missing subject-data guidance.
+- Re-run tests for configured-year fallback, latest value-bearing AV fallback, raw property-card
+  preservation, removed address search, PIN-only labels, and blocking/optional missing fields.
 - Do not restore address search unless the current public parcel-universe dataset exposes reliable
   address fields and live LIKE queries are verified.
 
@@ -60,7 +60,7 @@ Refresh these constants before each assessment session and before presenting the
 - Re-run the polite concurrency probe if the Socrata token policy, dataset behavior, or server
   request strategy changes.
 - Keep per-case outbound Socrata concurrency at 2 unless a new measured ceiling supports a change.
-- Keep the assessment-level build limiter at 4 concurrent case/print builds unless a new measured
+- Keep the assessment-level build limiter at 4 concurrent subject/analysis/packet/print builds unless a new measured
   token-backed ceiling supports a change.
 - Confirm `/api/queue` and the queue-timeout 503 path still pass tests.
 
@@ -76,8 +76,10 @@ Refresh these constants before each assessment session and before presenting the
   2-per-minute submission policies return HTTP 429 as expected.
 - Open the generated `.xlsx` comparable export in Excel or LibreOffice after workbook schema
   changes.
-- Verify the print packet honors the 3/5/10 comparable limit and contains no deadline-status
-  section.
+- Verify the packet contains only owner-selected evidence and comparable rows and contains no tax
+  savings, deadlines, filing instructions, checklists, or official-rule links.
+- Verify XLSX always contains all displayed comparables, retains selected comparable order, and
+  creates calculation sheets only for selected savings methods.
 
 ## 7. Verify User-Facing Honesty
 
@@ -85,10 +87,11 @@ Refresh these constants before each assessment session and before presenting the
 - Confirm PTAB requires the written BOR decision-notice date, shifts weekend and Illinois
   legal-holiday expirations, and explains the later Cook County township-transmission rule.
 - Confirm every deadline includes a verify-at-source link.
-- Confirm every user-supplied value is labeled as user-supplied.
-- Confirm estimated savings show the equalizer and tax-rate assumptions.
-- Confirm sub-5% implied-value gaps are context only and cannot create an argument, evidence-tier
-  point, or savings estimate.
+- Confirm public and effective values remain separate and every non-public value shows corrected,
+  added, or derived provenance plus required proof metadata.
+- Confirm every savings method separately shows the equalizer, tax rate, source, and exploratory
+  disclaimer.
+- Confirm official venue rules and Appeal Compass screening thresholds are labeled separately.
 
 ## 8. Final Checks
 

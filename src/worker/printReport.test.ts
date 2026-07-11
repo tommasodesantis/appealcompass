@@ -1,103 +1,104 @@
 import worker from "./index";
 
-const REQUIRED_STEP_ONE = "ownershipType=individual";
+const stepOne = {
+  jurisdiction: "cook_county_il",
+  venue: "assessor",
+  ownershipType: "individual",
+  borNoticeReceived: null,
+  borNoticeDate: null,
+  today: "2026-05-01",
+};
 
-async function printText(query: string): Promise<string> {
-  const response = await worker.fetch(new Request(`http://example.test/print?${query}`), {});
+function packetRequest(overrides: Record<string, unknown> = {}): Request {
+  return new Request("http://example.test/api/packet?demo=1", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      pin: "03-00-000-000-0001",
+      stepOne,
+      corrections: [],
+      valueEvidence: null,
+      revision: 1,
+      selection: {
+        evidenceTypes: ["uniformity"],
+        comparablePins: ["03000000000002", "03000000000003", "03000000000004"],
+      },
+      ...overrides,
+    }),
+  });
+}
+
+test("customized packet uses only selected evidence and selected comparable rows", async () => {
+  const response = await worker.fetch(packetRequest(), {});
   expect(response.status).toBe(200);
-  expect(response.headers.get("content-type")).toContain("text/html");
-  return response.text();
-}
-
-function expectNoBannedText(html: string): void {
-  expect(html).not.toContain("PLACEHOLDER");
-  expect(html).not.toContain("undefined");
-  expect(html).not.toContain("NaN");
-  expect(html).not.toContain(">null<");
-  expect(html.toLowerCase()).not.toContain(" null ");
-}
-
-test("print route renders required Assessor packet sections", async () => {
-  const html = await printText(
-    `demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&${REQUIRED_STEP_ONE}`,
-  );
-  expect(html).toContain("<h1>Appeal Compass</h1>");
-  expect(html).toContain("Back to Appeal Compass");
-  expect(html).toContain('href="/"');
-  expect(html).toContain("Packet produced:");
-  expect(html).toContain("Subject property specifications");
-  expect(html).toContain("Selected venue");
-  expect(html).toContain("Cook County Assessor");
-  expect(html).toContain("Comparable method");
-  expect(html).toContain("same-class, same-township public records");
-  expect(html).toContain("Comparable table");
-  expect(html).toContain("03-00-000-000-0010");
-  expect(html).toContain("higher");
-  expect(html).toContain("Comparable analysis results");
-  expect(html).toContain("Year built");
-  expect(html).toContain("Sale date");
-  expect(html).toContain("Sale price");
-  expect(html).toContain("Assessment metric");
-  expect(html).toContain("Improvement AV/sqft");
-  expect(html).toContain("Similarity score");
-  expect(html).toContain("approximate parcel-specific rate 7.7774%");
-  expect(html).toContain("Cook County Clerk 2024 Tax Code Agency Rate file");
-  expect(html).toContain("NOT LEGAL ADVICE");
-  expect(html).not.toContain("Executive Summary");
-  expect(html).not.toContain("Assessor Filing Instructions");
-  expect(html).not.toContain("Assessor Checklist");
-  expect(html).not.toContain("Exemptions and Certificate of Error Screen");
-  expect(html).not.toContain("Verify at the official source before filing");
-  expect(html).not.toContain("Socrata pagination");
-  expect(html).toContain("Print / Save as PDF");
-  expectNoBannedText(html);
+  const html = await response.text();
+  expect(html).toContain("Owner-selected evidence");
+  expect(html).toContain("Uniformity");
+  expect(html).not.toContain("Comparable-sales market evidence");
+  expect(html).toContain("03-00-000-000-0002");
+  expect(html).toContain("03-00-000-000-0003");
+  expect(html).not.toContain("03-00-000-000-0010");
 });
 
-test("print route suppresses user-facing calendar staleness warnings", async () => {
-  const html = await printText(
-    `demo=1&pin=03-00-000-000-0001&venue=assessor&today=2027-01-01&${REQUIRED_STEP_ONE}`,
+test("packet includes corrections, proof types, and derived reconciliation", async () => {
+  const response = await worker.fetch(
+    packetRequest({
+      corrections: [
+        {
+          field: "currentImprovementAv",
+          value: 48000,
+          proofType: "assessment_notice_or_tax_document",
+          reconciliation: "automatic",
+        },
+      ],
+      selection: { evidenceTypes: ["property_corrections"], comparablePins: [] },
+    }),
+    {},
   );
-  expect(html).not.toContain("configured calendar is past");
-  expect(html).not.toContain("Verify current deadlines");
-  expect(html).not.toContain("Deadline:");
-  expect(html).toContain("Comparable analysis results");
-  expectNoBannedText(html);
+  const html = await response.text();
+  expect(html).toContain("Assessment notice or tax document");
+  expect(html).toContain("derived");
+  expect(html).toContain("Total AV");
 });
 
-test("print route omits PTAB checklist language from the simplified packet", async () => {
-  const html = await printText(
-    "demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&ownershipType=individual&borNoticeReceived=yes&borNoticeDate=2026-05-20",
+test("multiple-card breakdown is included only for multi-card parcels", async () => {
+  const multi = await worker.fetch(
+    packetRequest({
+      pin: "03-00-000-000-0050",
+      selection: { evidenceTypes: ["uniformity"], comparablePins: ["03000000000051"] },
+    }),
+    {},
   );
-  expect(html).toContain("Selected venue");
-  expect(html).toContain("Illinois PTAB");
-  expect(html).toContain("Comparable method");
-  expect(html).not.toContain("PTAB Filing Instructions");
-  expect(html).not.toContain("PTAB Checklist");
-  expect(html).not.toContain("PTAB Comparable Grid Public-Data Limits");
-  expect(html).not.toContain("Attach the BOR written decision notice");
-  expectNoBannedText(html);
+  expect(await multi.text()).toContain("Residential property-card breakdown");
+  const single = await worker.fetch(packetRequest(), {});
+  expect(await single.text()).not.toContain("Residential property-card breakdown");
 });
 
-test("print route labels user-supplied subject values", async () => {
-  const html = await printText(
-    `demo=1&pin=03-00-000-000-0030&venue=bor&today=2025-07-10&actualSqft=1400&actualImprovementAv=30000&${REQUIRED_STEP_ONE}`,
-  );
-  expect(html).toContain("user-supplied");
-  expect(html.toLowerCase()).not.toContain("documentation required");
-  expect(html).toContain("Current improvement assessed value");
-  expect(html).toContain("Current land assessed value");
-  expect(html).not.toContain("BOR Filing Instructions");
-  expect(html).not.toContain("2025TOWNSHIPOPEN-CLOSE.pdf");
-  expectNoBannedText(html);
+test("packet excludes savings, deadlines, checklists, links to official rules, and obsolete result language", async () => {
+  const response = await worker.fetch(packetRequest(), {});
+  const html = await response.text();
+  for (const banned of [
+    "Annual savings",
+    "Estimated current tax",
+    "Deadline status",
+    "days remaining",
+    "checklist",
+    "Official source",
+    "automatic recommendation",
+  ]) {
+    expect(html.toLowerCase()).not.toContain(banned.toLowerCase());
+  }
 });
 
-test("print route honors the user-selected comparable limit", async () => {
-  const html = await printText(
-    `demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&maxComps=3&${REQUIRED_STEP_ONE}`,
+test("GET print remains functional with a reasonable default packet", async () => {
+  const response = await worker.fetch(
+    new Request(
+      "http://example.test/print?demo=1&pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&today=2026-05-01",
+    ),
+    {},
   );
-  const tableBody = html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] ?? "";
-  expect(tableBody.match(/<tr>/g) ?? []).toHaveLength(3);
-  expect(html).toContain("3 comparable homes included");
-  expect(html).toContain("The table includes at most 3 homes.");
-  expect(html).not.toContain("Deadline status");
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(html).toContain("Appeal Compass");
+  expect(html).toContain("Owner-selected comparable rows");
 });

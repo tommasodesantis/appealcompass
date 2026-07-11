@@ -1,59 +1,70 @@
 import {
-  ASSESSMENT_SNAPSHOT_KEY,
-  loadAssessmentSnapshot,
-  parseAssessmentSnapshot,
-  saveAssessmentSnapshot,
-  serializeAssessmentSnapshot,
+  APP_SESSION_KEY,
+  APP_SESSION_SCHEMA_VERSION,
+  loadSessionState,
+  parseSessionState,
+  saveSessionState,
+  serializeSessionState,
 } from "./sessionState";
 
 class MemoryStorage implements Pick<Storage, "getItem" | "setItem"> {
-  private readonly values = new Map<string, string>();
-
+  values = new Map<string, string>();
   getItem(key: string): string | null {
     return this.values.get(key) ?? null;
   }
-
   setItem(key: string, value: string): void {
     this.values.set(key, value);
   }
 }
 
-test("assessment snapshot serializes query params and payload", () => {
-  const query = new URLSearchParams("pin=03-00-000-000-0001&venue=assessor");
-  const value = serializeAssessmentSnapshot(query, { ok: true }, "2026-07-08T12:00:00.000Z");
-  const parsed = parseAssessmentSnapshot<{ ok: boolean }>(value);
+const state = {
+  stepOneQuery: "pin=03-00-000-000-0001&venue=assessor",
+  screen: "analysis" as const,
+  subjectPayload: { phase: "subject" },
+  corrections: [],
+  valueEvidence: null,
+  analysisPayload: { revision: 2 },
+  analysisRevision: 2,
+  table: {
+    bands: ["excellent" as const, "good" as const],
+    saleFilter: "recent" as const,
+    propertyClass: "203",
+    neighborhood: "0101",
+    maxDistanceKm: 2,
+    yearBuiltTolerance: 15,
+    sortKey: "similarity",
+    sortDirection: "asc" as const,
+    page: 2,
+    pageSize: 10 as const,
+  },
+  selectedComparablePins: ["03000000000002"],
+  savingsMethods: ["uniformity" as const],
+  packetEvidenceTypes: ["land" as const],
+};
 
-  expect(parsed?.query.get("pin")).toBe("03-00-000-000-0001");
-  expect(parsed?.query.get("venue")).toBe("assessor");
-  expect(parsed?.payload).toEqual({ ok: true });
-  expect(parsed?.savedAt).toBe("2026-07-08T12:00:00.000Z");
-  expect(value).toContain('"schemaVersion":2');
+test("versioned session state preserves every flow and selection surface", () => {
+  const value = serializeSessionState(state, "2026-07-11T10:00:00.000Z");
+  const parsed = parseSessionState(value);
+  expect(parsed?.schemaVersion).toBe(APP_SESSION_SCHEMA_VERSION);
+  expect(parsed?.stepOneQuery).toContain("venue=assessor");
+  expect(parsed?.analysisRevision).toBe(2);
+  expect(parsed?.table.page).toBe(2);
+  expect(parsed?.selectedComparablePins).toEqual(["03000000000002"]);
+  expect(parsed?.savingsMethods).toEqual(["uniformity"]);
+  expect(parsed?.packetEvidenceTypes).toEqual(["land"]);
 });
 
-test("assessment snapshot parser rejects malformed storage values", () => {
-  expect(parseAssessmentSnapshot(null)).toBeNull();
-  expect(parseAssessmentSnapshot("not json")).toBeNull();
-  expect(parseAssessmentSnapshot(JSON.stringify({ queryString: "pin=1" }))).toBeNull();
+test("session parser rejects malformed and stale schemas", () => {
+  expect(parseSessionState(null)).toBeNull();
+  expect(parseSessionState("not json")).toBeNull();
   expect(
-    parseAssessmentSnapshot(
-      JSON.stringify({
-        schemaVersion: 1,
-        queryString: "pin=1",
-        payload: { ok: true },
-        savedAt: "2026-07-08T12:00:00.000Z",
-      }),
-    ),
+    parseSessionState(JSON.stringify({ ...state, schemaVersion: 2, savedAt: "x" })),
   ).toBeNull();
 });
 
-test("assessment snapshot save and load tolerate storage APIs", () => {
+test("session save and load tolerate storage APIs", () => {
   const storage = new MemoryStorage();
-  const query = new URLSearchParams("pin=03-00-000-000-0001&venue=bor");
-
-  expect(saveAssessmentSnapshot(storage, query, { ok: true })).toBe(true);
-  const loaded = loadAssessmentSnapshot<{ ok: boolean }>(storage);
-
-  expect(storage.getItem(ASSESSMENT_SNAPSHOT_KEY)).toContain("venue=bor");
-  expect(loaded?.query.get("venue")).toBe("bor");
-  expect(loaded?.payload.ok).toBe(true);
+  expect(saveSessionState(storage, state)).toBe(true);
+  expect(storage.getItem(APP_SESSION_KEY)).toContain('"analysisRevision":2');
+  expect(loadSessionState(storage)?.table.saleFilter).toBe("recent");
 });

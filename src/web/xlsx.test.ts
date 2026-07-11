@@ -1,13 +1,11 @@
+import type { AnalysisPayload } from "../worker/casePayload";
 import worker from "../worker/index";
 import { buildComparableWorkbook } from "./xlsx";
 
-const REQUIRED_STEP_ONE = "ownershipType=individual";
 const decoder = new TextDecoder();
-
 function uint16(bytes: Uint8Array, offset: number): number {
   return (bytes[offset] ?? 0) | ((bytes[offset + 1] ?? 0) << 8);
 }
-
 function uint32(bytes: Uint8Array, offset: number): number {
   return (
     (bytes[offset] ?? 0) |
@@ -16,74 +14,106 @@ function uint32(bytes: Uint8Array, offset: number): number {
     ((bytes[offset + 3] ?? 0) << 24)
   );
 }
-
 function unzipStored(bytes: Uint8Array): Map<string, string> {
   const entries = new Map<string, string>();
   let offset = 0;
   while (offset + 30 <= bytes.length && uint32(bytes, offset) === 0x04034b50) {
-    const method = uint16(bytes, offset + 8);
-    const compressedSize = uint32(bytes, offset + 18);
+    const size = uint32(bytes, offset + 18);
     const nameLength = uint16(bytes, offset + 26);
     const extraLength = uint16(bytes, offset + 28);
-    expect(method).toBe(0);
     const nameStart = offset + 30;
-    const nameEnd = nameStart + nameLength;
-    const dataStart = nameEnd + extraLength;
-    const dataEnd = dataStart + compressedSize;
-    const name = decoder.decode(bytes.slice(nameStart, nameEnd));
-    entries.set(name, decoder.decode(bytes.slice(dataStart, dataEnd)));
-    offset = dataEnd;
+    const dataStart = nameStart + nameLength + extraLength;
+    entries.set(
+      decoder.decode(bytes.slice(nameStart, nameStart + nameLength)),
+      decoder.decode(bytes.slice(dataStart, dataStart + size)),
+    );
+    offset = dataStart + size;
   }
   return entries;
 }
 
-test("buildComparableWorkbook creates a real XLSX with expected exhibit sections", async () => {
+async function payload(): Promise<AnalysisPayload> {
   const response = await worker.fetch(
     new Request(
-      `http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&${REQUIRED_STEP_ONE}`,
+      "http://example.test/api/case?demo=1&pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&today=2026-05-01",
     ),
     {},
   );
   expect(response.status).toBe(200);
-  const payload = await response.json();
-  const workbook = buildComparableWorkbook(payload as never);
-  const entries = unzipStored(workbook);
+  return (await response.json()) as AnalysisPayload;
+}
 
-  expect(entries.has("[Content_Types].xml")).toBe(true);
-  expect(entries.has("xl/workbook.xml")).toBe(true);
-  expect(entries.has("xl/worksheets/sheet2.xml")).toBe(true);
-  expect(entries.get("[Content_Types].xml") ?? "").toContain("/xl/worksheets/sheet2.xml");
-  expect(entries.get("xl/workbook.xml") ?? "").toContain("Similar Homes");
-  expect(entries.get("xl/_rels/workbook.xml.rels") ?? "").toContain("worksheets/sheet2.xml");
-  const sheet = entries.get("xl/worksheets/sheet1.xml") ?? "";
-  const similarHomes = entries.get("xl/worksheets/sheet2.xml") ?? "";
-  expect(sheet).toContain("Subject Property Summary");
-  expect(sheet).toContain("Selected Comparable Homes");
-  expect(sheet).toContain("Distance km");
-  expect(sheet).toContain("Neighborhood");
-  expect(sheet).toContain("Property class");
-  expect(sheet).toContain("Building sqft");
-  expect(sheet).toContain("Year built");
-  expect(sheet).toContain("Sale date");
-  expect(sheet).toContain("Sale price");
-  expect(sheet).toContain("Assessment metric");
-  expect(sheet).toContain("Improvement AV/sqft");
-  expect(sheet).toContain("Compared with subject (%)");
-  expect(sheet).toContain("Similarity score");
-  expect(sheet).toContain("Analysis Stats");
-  expect(sheet).toContain("Median Improvement AV/sqft");
-  expect(sheet).toContain("Land check");
-  expect(sheet).toContain("Savings Calculation");
-  expect(sheet).toContain("State equalizer");
-  expect(sheet).toContain("Tax rate source");
-  expect(sheet).toContain("approximate parcel-specific rate 7.7774%");
-  expect(sheet).toContain("2024-08-10");
-  expect(sheet).toContain("03-00-000-000-0002");
-  expect(sheet).toContain("03-00-000-000-0010");
-  expect(sheet.toLowerCase()).not.toContain("documentation required");
-  expect(similarHomes).toContain("Similar Homes");
-  expect(similarHomes).toContain("full selected comparable pool");
-  expect(similarHomes).toContain("Improvement AV/sqft");
-  expect(similarHomes).toContain("Similarity score");
-  expect(similarHomes).toContain("03-00-000-000-0010");
+test("workbook is valid and contains required subject, selected, all, and evidence sheets", async () => {
+  const analysis = await payload();
+  const bytes = buildComparableWorkbook(analysis, {
+    selectedComparablePins: ["03000000000002", "03000000000003"],
+    packetEvidenceTypes: ["uniformity", "land"],
+    savingsMethods: ["uniformity", "land"],
+  });
+  const entries = unzipStored(bytes);
+  const workbook = entries.get("xl/workbook.xml") ?? "";
+  expect(workbook).toContain("Subject &amp; Corrections");
+  expect(workbook).toContain("Selected Comparables");
+  expect(workbook).toContain("All Comparables");
+  expect(workbook).toContain("Evidence Summary");
+  expect(workbook).toContain("Savings - Uniformity");
+  expect(workbook).toContain("Savings - Land");
+  expect(workbook).not.toContain("Savings - Appraisal");
+  expect(entries.size).toBeGreaterThan(8);
+});
+
+test("selected and all comparable sheets retain their different row sets", async () => {
+  const analysis = await payload();
+  const entries = unzipStored(
+    buildComparableWorkbook(analysis, {
+      selectedComparablePins: ["03000000000002"],
+      packetEvidenceTypes: ["uniformity"],
+      savingsMethods: [],
+    }),
+  );
+  const selected = entries.get("xl/worksheets/sheet2.xml") ?? "";
+  const all = entries.get("xl/worksheets/sheet3.xml") ?? "";
+  expect(selected).toContain("03-00-000-000-0002");
+  expect(selected).not.toContain("03-00-000-000-0010");
+  expect(all).toContain("03-00-000-000-0002");
+  expect(all).toContain("03-00-000-000-0010");
+  expect(all).toContain("Land AV/sqft");
+});
+
+test("workbook contains corrected values and proof types without obsolete content", async () => {
+  const response = await worker.fetch(
+    new Request("http://example.test/api/analysis?demo=1", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pin: "03-00-000-000-0001",
+        stepOne: {
+          jurisdiction: "cook_county_il",
+          venue: "assessor",
+          ownershipType: "individual",
+          borNoticeReceived: null,
+          borNoticeDate: null,
+          today: "2026-05-01",
+        },
+        corrections: [
+          { field: "buildingSqft", value: 1900, proofType: "official_property_record_card" },
+        ],
+        valueEvidence: null,
+        revision: 2,
+      }),
+    }),
+    {},
+  );
+  const analysis = (await response.json()) as AnalysisPayload;
+  const entries = unzipStored(
+    buildComparableWorkbook(analysis, {
+      selectedComparablePins: [],
+      packetEvidenceTypes: ["property_corrections"],
+      savingsMethods: [],
+    }),
+  );
+  const allText = [...entries.values()].join(" ").toLowerCase();
+  expect(allText).toContain("official property record card");
+  expect(allText).toContain("1900");
+  expect(allText).toContain("each evidence type is reported independently");
 });

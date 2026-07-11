@@ -51,8 +51,8 @@ test("SocrataRepository filters internal Socrata warnings and surfaces missing l
   const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   const repo = new SocrataRepository(new MissingAddressClient() as never);
   try {
-    const caseFile = await repo.loadCaseByPin("03-00-000-000-0001");
-    const warnings = caseFile.dataWarnings.join("\n");
+    const subject = await repo.loadSubjectByPin("03-00-000-000-0001");
+    const warnings = subject.dataWarnings.join("\n");
     expect(warnings).not.toContain("parcel pagination warning");
     expect(warnings).toContain("Residential characteristics were unavailable");
     expect(warnings).toContain("Current assessed value was unavailable");
@@ -66,9 +66,11 @@ test("SocrataRepository filters internal Socrata warnings and surfaces missing l
 
 class EnrichedComparableClient {
   comparableSalesQueries = 0;
+  queries: string[] = [];
 
   async fetchAll(datasetKey: string, params: Record<string, string>): Promise<SocrataResponse> {
     const where = params.$where ?? "";
+    this.queries.push(`${datasetKey}:${where}`);
     if (datasetKey === "parcel_universe" && where.includes("pin='03000000000001'")) {
       return {
         rows: [
@@ -202,15 +204,16 @@ class EnrichedComparableClient {
 test("SocrataRepository enriches live comparables without address placeholders", async () => {
   const client = new EnrichedComparableClient();
   const repo = new SocrataRepository(client as never);
-  const caseFile = await repo.loadCaseByPin("03-00-000-000-0001");
-  expect(caseFile.parcel.currentImprovementAv).toBe(50000);
-  expect(caseFile.parcel.currentLandAv).toBe(10000);
-  expect(caseFile.parcel.assessmentYear).toBe(2025);
-  expect(caseFile.parcel.taxCode).toBe("10001");
-  expect(caseFile.comparables).not.toHaveLength(0);
-  const comp = caseFile.comparables[0];
+  const subject = await repo.loadSubjectByPin("03-00-000-000-0001");
+  const [comparables] = await repo.loadComparables(subject.publicParcel);
+  expect(subject.publicParcel.currentImprovementAv).toBe(50000);
+  expect(subject.publicParcel.currentLandAv).toBe(10000);
+  expect(subject.publicParcel.assessmentYear).toBe(2025);
+  expect(subject.publicParcel.taxCode).toBe("10001");
+  expect(comparables).not.toHaveLength(0);
+  const comp = comparables[0];
   expect(comp?.address).toBe("");
-  expect(caseFile.dataWarnings.join("\n")).not.toContain("address");
+  expect(subject.dataWarnings.join("\n")).not.toContain("address");
   expect(comp?.neighborhood).toBe("0101");
   expect(comp?.propertyClass).toBe("203");
   expect(comp?.lat).toBe(41.9902);
@@ -224,6 +227,25 @@ test("SocrataRepository enriches live comparables without address placeholders",
   expect(comp?.style).toBe("1 Story|Frame|Average");
   expect(comp?.amenityCount).toBe(1);
   expect(client.comparableSalesQueries).toBe(1);
+});
+
+test("corrected class and township change the repository queries used for comparables", async () => {
+  const client = new EnrichedComparableClient();
+  const repo = new SocrataRepository(client as never);
+  const subject = await repo.loadSubjectByPin("03-00-000-000-0001");
+  client.queries = [];
+  await repo.loadComparables({
+    ...subject.publicParcel,
+    propertyClass: "204",
+    townshipName: "New Trier",
+    townshipCode: null,
+  });
+  expect(client.queries).toContain(
+    "parcel_universe:township_name='New Trier' AND class='204' AND year='2026'",
+  );
+  expect(client.queries.some((query) => query.includes("township_code='01' AND class='204'"))).toBe(
+    true,
+  );
 });
 
 class MulticardClient {
@@ -408,29 +430,34 @@ class MulticardClient {
 
 test("SocrataRepository aggregates every residential card before calculating parcel metrics", async () => {
   const repo = new SocrataRepository(new MulticardClient() as never);
-  const caseFile = await repo.loadCaseByPin("14-31-414-038-0000");
+  const subject = await repo.loadSubjectByPin("14-31-414-038-0000");
+  const [comparables] = await repo.loadComparables(subject.publicParcel);
 
-  expect(caseFile.parcel.buildingSqft).toBe(4396);
-  expect(caseFile.parcel.landSqft).toBe(3000);
-  expect(caseFile.parcel.beds).toBe(4);
-  expect(caseFile.parcel.fullBaths).toBe(3);
-  expect(caseFile.parcel.isMulticard).toBe(true);
-  expect(caseFile.parcel.cardCount).toBe(2);
-  expect(caseFile.parcel.cardClasses).toEqual(["203", "211"]);
-  expect(caseFile.parcel.characteristicsReconciled).toBe(true);
-  expect(caseFile.parcel.currentAv).toBe(124432);
-  expect(caseFile.parcel.currentImprovementAv).toBe(98332);
-  expect(caseFile.parcel.assessmentStages).toEqual({
+  expect(subject.publicParcel.buildingSqft).toBe(4396);
+  expect(subject.publicParcel.landSqft).toBe(3000);
+  expect(subject.publicParcel.beds).toBe(4);
+  expect(subject.publicParcel.fullBaths).toBe(3);
+  expect(subject.publicParcel.isMulticard).toBe(true);
+  expect(subject.publicParcel.cardCount).toBe(2);
+  expect(subject.publicParcel.cardClasses).toEqual(["203", "211"]);
+  expect(subject.publicParcel.characteristicsReconciled).toBe(true);
+  expect(subject.propertyCards).toEqual([
+    { cardNumber: "1", propertyClass: "211", buildingSqft: 3390, yearBuilt: 1892 },
+    { cardNumber: "2", propertyClass: "203", buildingSqft: 1006, yearBuilt: 1892 },
+  ]);
+  expect(subject.publicParcel.currentAv).toBe(124432);
+  expect(subject.publicParcel.currentImprovementAv).toBe(98332);
+  expect(subject.publicParcel.assessmentStages).toEqual({
     total: "board",
     improvement: "board",
     land: "board",
   });
-  expect(caseFile.parcel.assessmentComponentsReconciled).toBe(true);
-  expect(caseFile.parcel.priorFinalAv).toBe(120000);
-  expect(caseFile.comparables).toHaveLength(1);
-  expect(caseFile.comparables[0]?.buildingSqft).toBe(4100);
-  expect(caseFile.comparables[0]?.cardCount).toBe(2);
-  expect(caseFile.dataWarnings.join("\n")).toContain("combined across all cards");
+  expect(subject.publicParcel.assessmentComponentsReconciled).toBe(true);
+  expect(subject.publicParcel.priorFinalAv).toBe(120000);
+  expect(comparables).toHaveLength(1);
+  expect(comparables[0]?.buildingSqft).toBe(4100);
+  expect(comparables[0]?.cardCount).toBe(2);
+  expect(subject.dataWarnings.join("\n")).toContain("combined across all cards");
 });
 
 class UnsupportedClassClient {
@@ -463,7 +490,7 @@ test.each(["597", "318", "591"])(
   async (propertyClass) => {
     const client = new UnsupportedClassClient(propertyClass);
     const repo = new SocrataRepository(client as never);
-    await expect(repo.loadCaseByPin("17-19-411-044-0000")).rejects.toBeInstanceOf(
+    await expect(repo.loadSubjectByPin("17-19-411-044-0000")).rejects.toBeInstanceOf(
       UnsupportedPropertyError,
     );
     expect(client.calls).toEqual(["parcel_universe"]);

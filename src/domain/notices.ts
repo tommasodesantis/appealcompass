@@ -246,14 +246,36 @@ export function buildDataNotices(inputWarnings: string[]): DataNotice[] {
     });
   }
 
-  const userSupplied = take((warning) => /user-supplied/i.test(warning));
+  const userSupplied = take((warning) => /user-supplied|user-corrected/i.test(warning));
   if (userSupplied.length > 0) {
     notices.push({
       code: "user_supplied_values",
       severity: "info",
-      title: "Using values you entered",
-      summary: "Some calculations use fallback values entered in this assessment.",
+      title: "Using confirmed subject corrections",
+      summary: "Some calculations use documented values confirmed in this analysis.",
       details: userSupplied,
+    });
+  }
+
+  const missingTaxRate = take((warning) => /tax-rate information was unavailable/i.test(warning));
+  if (missingTaxRate.length > 0) {
+    notices.push({
+      code: "tax_rate_missing",
+      severity: "caution",
+      title: "Parcel-specific tax rate is unavailable",
+      summary: "Savings calculations use the clearly labeled county default assumption.",
+      details: missingTaxRate,
+    });
+  }
+
+  const ptabLimits = take((warning) => /PTAB public-data limitations/i.test(warning));
+  if (ptabLimits.length > 0) {
+    notices.push({
+      code: "ptab_public_data_limits",
+      severity: "caution",
+      title: "PTAB comparison data is incomplete",
+      summary: "Public data cannot populate every adjusted comparison field PTAB may require.",
+      details: ptabLimits,
     });
   }
 

@@ -1,24 +1,49 @@
+import { profileForVenue } from "./comparableProfiles";
 import type { ComparableProfile } from "./comparableProfiles";
-import { ASSESSOR_PROFILE, profileForVenue } from "./comparableProfiles";
-import { isQualifyingValueEvidenceDate, valueEvidencePolicy } from "./comparableSaleFilter";
-import { ASSESSMENT_LEVEL, NOT_LEGAL_ADVICE, STATE_EQUALIZER } from "./config";
-import { estimatedSavingsRange, gapPct, medianValue, percentileRank, safeDiv } from "./math";
+import {
+  isQualifyingValueEvidenceDate,
+  isRecentSaleDate,
+  valueEvidencePolicy,
+} from "./comparableSaleFilter";
+import {
+  ASSESSMENT_LEVEL,
+  BOR_RULES_URL,
+  CCAO_APPEALS_URL,
+  NOT_LEGAL_ADVICE,
+  PTAB_RULES_URL,
+  STATE_EQUALIZER,
+} from "./config";
+import { gapPct, medianValue, percentileRank, safeDiv } from "./math";
 import type {
-  ArgumentStrength,
-  CaseFile,
+  AnalysisCase,
+  AnalysisResult,
   Comparable,
-  ComparableAnalysis,
   ComparableExhibit,
-  EvidenceArgument,
-  EvidenceSummary,
-  EvidenceTier,
-  LandAssessmentCheck,
-  MissingComparableField,
+  ComparableSummary,
+  EvidenceCandidate,
+  EvidenceStatus,
+  EvidenceType,
   Parcel,
   ResolvedVenue,
-  ValueEvidence,
+  SavingsCalculation,
+  SavingsMethod,
+  SimilarityBandName,
+  SimilarityGroupKey,
+  SimilarityGroupSummary,
 } from "./models";
 import { isCondo } from "./models";
+import {
+  MAX_ACTIONABLE_SIMILARITY,
+  MAX_DISPLAYED_SIMILARITY,
+  similarityBand,
+} from "./similarityBands";
+
+export const MIN_POTENTIALLY_USEFUL_GAP_PCT = 5;
+export const PROMISING_GAP_PCT = 10;
+
+function positive(value: number | null): number | null {
+  return value !== null && value > 0 ? value : null;
+}
 
 function distanceKm(
   lat1: number | null,
@@ -26,10 +51,8 @@ function distanceKm(
   lat2: number | null,
   lon2: number | null,
 ): number | null {
-  if (lat1 === null || lon1 === null || lat2 === null || lon2 === null) {
-    return null;
-  }
-  const radius = 6371.0;
+  if (lat1 === null || lon1 === null || lat2 === null || lon2 === null) return null;
+  const radius = 6371;
   const p1 = (Math.PI * lat1) / 180;
   const p2 = (Math.PI * lat2) / 180;
   const dphi = (Math.PI * (lat2 - lat1)) / 180;
@@ -38,191 +61,25 @@ function distanceKm(
   return 2 * radius * Math.asin(Math.sqrt(a));
 }
 
-function positive(value: number | null): number | null {
-  return value !== null && value > 0 ? value : null;
-}
-
-export const MIN_ACTIONABLE_OVERVALUE_GAP_PCT = 5;
-export const MAX_ACTIONABLE_SIMILARITY = 0.35;
-
-function similarity(subject: CaseFile, comp: Comparable): number {
-  const parcel = subject.parcel;
-  const parcelSqft = effectiveSqft(subject);
-  const compSqft = positive(comp.buildingSqft);
+export function comparableSimilarity(subject: Parcel, comp: Comparable): number {
   let score = 0;
-  if (parcelSqft !== null && compSqft !== null) {
-    score += (0.5 * Math.abs(compSqft - parcelSqft)) / parcelSqft;
-  } else {
-    score += 0.5;
-  }
-  if (parcel.yearBuilt && comp.yearBuilt) {
-    score += 0.3 * Math.min(Math.abs(comp.yearBuilt - parcel.yearBuilt) / 50, 1);
-  } else {
-    score += 0.15;
-  }
-  const distance = distanceKm(parcel.lat, parcel.lon, comp.lat, comp.lon);
+  const subjectSqft = positive(subject.buildingSqft);
+  const compSqft = positive(comp.buildingSqft);
+  score +=
+    subjectSqft !== null && compSqft !== null
+      ? (0.5 * Math.abs(compSqft - subjectSqft)) / subjectSqft
+      : 0.5;
+  score +=
+    subject.yearBuilt !== null && comp.yearBuilt !== null
+      ? 0.3 * Math.min(Math.abs(comp.yearBuilt - subject.yearBuilt) / 50, 1)
+      : 0.15;
+  const distance = distanceKm(subject.lat, subject.lon, comp.lat, comp.lon);
   score += 0.2 * Math.min((distance ?? 1) / 2, 1);
   return score;
 }
 
-function subjectMetricValue(parcel: Parcel, profile: ComparableProfile): number | null {
-  void profile;
-  return parcel.currentImprovementAv;
-}
-
-function effectiveSqft(caseFile: CaseFile): number | null {
-  return positive(caseFile.parcel.buildingSqft) ?? positive(caseFile.userEvidence.actualSqft);
-}
-
-function effectiveTotalAv(caseFile: CaseFile): number | null {
-  return positive(caseFile.parcel.currentAv) ?? positive(caseFile.userEvidence.actualAv);
-}
-
-function effectiveMetricValue(caseFile: CaseFile, profile: ComparableProfile): number | null {
-  const official = positive(subjectMetricValue(caseFile.parcel, profile));
-  if (official !== null) {
-    return official;
-  }
-  return positive(caseFile.userEvidence.actualImprovementAv);
-}
-
-function userSuppliedWarnings(caseFile: CaseFile, profile: ComparableProfile): string[] {
-  const warnings: string[] = [];
-  if (
-    positive(caseFile.parcel.buildingSqft) === null &&
-    positive(caseFile.userEvidence.actualSqft)
-  ) {
-    warnings.push("Using user-supplied building sqft for comparable analysis.");
-  }
-  if (
-    profile.metric === "improvement_av" &&
-    positive(caseFile.parcel.currentImprovementAv) === null &&
-    positive(caseFile.userEvidence.actualImprovementAv)
-  ) {
-    warnings.push("Using user-supplied building/improvement assessment for comparable analysis.");
-  }
-  return warnings;
-}
-
-function missingSubjectFields(
-  caseFile: CaseFile,
-  profile: ComparableProfile,
-): MissingComparableField[] {
-  const fields: MissingComparableField[] = [];
-  if (!effectiveSqft(caseFile)) {
-    fields.push({
-      name: "actualSqft",
-      label: "Documented building sqft",
-      helpText:
-        "Use the building/living area from a property record card, appraisal, plans, or other reliable source.",
-    });
-  }
-  if (!effectiveMetricValue(caseFile, profile)) {
-    fields.push({
-      name: "actualImprovementAv",
-      label: "Documented Improvement AV",
-      helpText:
-        "Use the building/improvement assessed value from an official assessment notice or property record card.",
-    });
-  }
-  return fields;
-}
-
-function comparableMetricValue(comp: Comparable, profile: ComparableProfile): number | null {
-  void profile;
-  return comp.improvementAv;
-}
-
-function samePropertyClass(parcel: Parcel, comp: Comparable): boolean {
-  return comp.propertyClass !== null && comp.propertyClass.trim() === parcel.propertyClass.trim();
-}
-
-function sameAssessmentYear(parcel: Parcel, comp: Comparable): boolean {
-  return parcel.assessmentYear === null || comp.assessmentYear === parcel.assessmentYear;
-}
-
-function subjectDataWarnings(parcel: Parcel): string[] {
-  const warnings: string[] = [];
-  if (positive(parcel.currentImprovementAv) === null) {
-    warnings.push(
-      "Public Improvement AV is missing or nonpositive; comparable uniformity analysis needs a fallback Improvement AV.",
-    );
-  }
-  if (positive(parcel.buildingSqft) === null) {
-    warnings.push(
-      "Public building square footage is missing or nonpositive; comparable uniformity analysis needs a fallback building sqft value.",
-    );
-  }
-  if (positive(parcel.currentImprovementAv) === null && positive(parcel.currentAv) !== null) {
-    warnings.push(
-      "This parcel may have little or no assessed improvement value. Vacant or no-improvement parcels require manual review before using residential comparable evidence.",
-    );
-  }
-  if (parcel.assessmentYear === null) {
-    warnings.push(
-      "The public assessment year for the subject could not be confirmed; verify the subject and comparable values use the same assessment year.",
-    );
-  }
-  if (!parcel.characteristicsReconciled) {
-    warnings.push(
-      "The subject's residential property cards could not be fully reconciled; automated uniformity conclusions and savings are suppressed.",
-    );
-  }
-  if (!parcel.assessmentComponentsReconciled) {
-    warnings.push(
-      "The subject's Total, Improvement, and Land AV components could not be reconciled; automated reduction and savings estimates are suppressed.",
-    );
-  }
-  if (/^(211|212|234|278)$/.test(parcel.propertyClass.trim())) {
-    warnings.push(
-      "This residential class can involve multi-unit, multi-building, or other-improvement details. Verify the property record card before relying on Improvement AV/sqft.",
-    );
-  }
-  return warnings;
-}
-
-function profiledAnalysis(input: {
-  status: ComparableAnalysis["status"];
-  note: string;
-  profile: ComparableProfile;
-  warnings?: string[];
-  missingFields?: MissingComparableField[];
-  missingDataRate?: number | null;
-  scope?: string | null;
-  poolSize?: number;
-  actionablePoolSize?: number;
-  subjectAvPerSqft?: number | null;
-  medianAvPerSqft?: number | null;
-  percentile?: number | null;
-  gap?: number | null;
-  pool?: ComparableExhibit[];
-  exhibit?: ComparableExhibit[];
-}): ComparableAnalysis {
-  return {
-    status: input.status,
-    note: input.note,
-    profileKey: input.profile.key,
-    profileLabel: input.profile.venueLabel,
-    metricLabel: input.profile.metricLabel,
-    missingFields: input.missingFields ?? [],
-    warnings: input.warnings ?? [],
-    missingDataRate: input.missingDataRate ?? null,
-    scope: input.scope ?? null,
-    poolSize: input.poolSize ?? 0,
-    actionablePoolSize: input.actionablePoolSize ?? 0,
-    maxActionableSimilarity: MAX_ACTIONABLE_SIMILARITY,
-    subjectAvPerSqft: input.subjectAvPerSqft ?? null,
-    medianAvPerSqft: input.medianAvPerSqft ?? null,
-    percentile: input.percentile ?? null,
-    gapPct: input.gap ?? null,
-    pool: input.pool ?? [],
-    exhibit: input.exhibit ?? [],
-  };
-}
-
 function passesYearFilter(parcel: Parcel, comp: Comparable, profile: ComparableProfile): boolean {
-  const lastStep = profile.similaritySteps[profile.similaritySteps.length - 1];
-  const tolerance = lastStep?.yearTolerance ?? 0;
+  const tolerance = profile.similaritySteps.at(-1)?.yearTolerance ?? 0;
   if (profile.requireYear) {
     return (
       parcel.yearBuilt !== null &&
@@ -242,233 +99,55 @@ function passesProfileRequirements(
   comp: Comparable,
   profile: ComparableProfile,
 ): boolean {
-  if (!passesYearFilter(parcel, comp, profile)) {
-    return false;
-  }
+  if (!passesYearFilter(parcel, comp, profile)) return false;
   if (profile.requireLand) {
-    if (!parcel.landSqft || !comp.landSqft) {
-      return false;
-    }
+    if (!parcel.landSqft || !comp.landSqft) return false;
     const tolerance = profile.landTolerance ?? 1;
-    const low = parcel.landSqft * (1 - tolerance);
-    const high = parcel.landSqft * (1 + tolerance);
-    if (!(low <= comp.landSqft && comp.landSqft <= high)) {
+    if (
+      comp.landSqft < parcel.landSqft * (1 - tolerance) ||
+      comp.landSqft > parcel.landSqft * (1 + tolerance)
+    ) {
       return false;
     }
   }
-  if (profile.requireStyle) {
-    if (!parcel.style || !comp.style || comp.style !== parcel.style) {
-      return false;
-    }
-  }
-  if (!comp.characteristicsReconciled || !comp.assessmentComponentsReconciled) {
+  if (profile.requireStyle && (!parcel.style || !comp.style || parcel.style !== comp.style)) {
     return false;
   }
-  if (parcel.isMulticard && (!comp.isMulticard || comp.cardCount !== parcel.cardCount)) {
-    return false;
-  }
-  return !(profile.requireAmenity && comp.amenityCount <= 0);
+  if (profile.requireAmenity && comp.amenityCount <= 0) return false;
+  if (!comp.characteristicsReconciled || !comp.assessmentComponentsReconciled) return false;
+  return !(parcel.isMulticard && (!comp.isMulticard || comp.cardCount !== parcel.cardCount));
 }
 
-function targetTotalAv(caseFile: CaseFile, profile: ComparableProfile, targetMetricValue: number) {
-  const currentTotal = effectiveTotalAv(caseFile);
-  const currentImprovement =
-    positive(caseFile.parcel.currentImprovementAv) ??
-    positive(caseFile.userEvidence.actualImprovementAv);
-  if (profile.metric === "improvement_av" && currentImprovement !== null && currentTotal !== null) {
-    const reduction = Math.max(0, currentImprovement - targetMetricValue);
-    return Math.max(0, currentTotal - reduction);
-  }
-  return targetMetricValue;
-}
-
-function condoMissingDataRate(caseFile: CaseFile, profile: ComparableProfile): number {
-  const candidates = caseFile.comparables.filter((comp) => comp.pin !== caseFile.parcel.pin);
-  if (candidates.length === 0) {
-    return 100;
-  }
-  let missing = 0;
-  for (const comp of candidates) {
-    const metricValue = comparableMetricValue(comp, profile);
-    if (!comp.buildingSqft || comp.buildingSqft <= 0 || !metricValue || metricValue <= 0) {
-      missing += 1;
-    }
-  }
-  return Math.round((1000 * missing) / candidates.length) / 10;
-}
-
-function condoReliability(
-  caseFile: CaseFile,
+function selectProfilePool(
+  parcel: Parcel,
+  comparables: Comparable[],
   profile: ComparableProfile,
-): { shouldRun: boolean; warnings: string[]; missingRate: number } {
-  const missingRate = condoMissingDataRate(caseFile, profile);
-  if (missingRate > 50) {
-    return { shouldRun: false, warnings: [], missingRate };
-  }
-  if (missingRate >= 30) {
-    return {
-      shouldRun: true,
-      warnings: [
-        `Condo comparable analysis is less reliable because ${missingRate.toFixed(
-          0,
-        )}% of public condo candidates are missing unit sqft or ${profile.metricLabel}.`,
-      ],
-      missingRate,
-    };
-  }
-  return { shouldRun: true, warnings: [], missingRate };
-}
-
-function comparableRows(
-  caseFile: CaseFile,
-  comps: Comparable[],
-  profile: ComparableProfile,
-): ComparableExhibit[] {
-  const parcel = caseFile.parcel;
-  return comps
-    .map((comp) => {
-      const compPsf = safeDiv(comparableMetricValue(comp, profile), comp.buildingSqft);
-      if (compPsf === null) {
-        return null;
-      }
-      return {
-        comparable: comp,
-        avPerSqft: compPsf,
-        distanceKm: distanceKm(parcel.lat, parcel.lon, comp.lat, comp.lon),
-        similarity: similarity(caseFile, comp),
-      };
-    })
-    .filter((item): item is ComparableExhibit => item !== null)
-    .sort((a, b) => a.similarity - b.similarity);
-}
-
-export function analyzeComparables(
-  caseFile: CaseFile,
-  maxComps = 10,
-  profile: ComparableProfile = ASSESSOR_PROFILE,
-): ComparableAnalysis {
-  const parcel = caseFile.parcel;
-  let warnings = [...subjectDataWarnings(parcel), ...userSuppliedWarnings(caseFile, profile)];
-  let missingDataRate: number | null = null;
-
-  if (isCondo(parcel)) {
-    const reliability = condoReliability(caseFile, profile);
-    warnings = [...warnings, ...reliability.warnings];
-    missingDataRate = reliability.missingRate;
-    if (!reliability.shouldRun) {
-      return profiledAnalysis({
-        status: "condo",
-        note: `Condo comparable analysis skipped after measuring ${missingDataRate.toFixed(
-          0,
-        )}% missing unit sqft or ${
-          profile.metricLabel
-        } in the public condo candidate pool. Use sale, appraisal, building-level equity, or factual-error evidence.`,
-        profile,
-        missingDataRate,
-      });
-    }
-  }
-
-  if (!parcel.characteristicsReconciled || !parcel.assessmentComponentsReconciled) {
-    const reasons = [
-      !parcel.characteristicsReconciled ? "property-card characteristics" : null,
-      !parcel.assessmentComponentsReconciled ? "assessment components" : null,
-    ].filter((reason): reason is string => reason !== null);
-    return profiledAnalysis({
-      status: "insufficient_data",
-      note: `Automated uniformity analysis is suppressed because the subject's ${reasons.join(
-        " and ",
-      )} could not be reconciled. Verify the official property record before relying on a per-square-foot comparison.`,
-      profile,
-      warnings,
-      missingDataRate,
-    });
-  }
-
-  const subjectMetric = effectiveMetricValue(caseFile, profile);
-  const subjectSqft = effectiveSqft(caseFile);
-  const subjectPsf = safeDiv(subjectMetric, subjectSqft);
-  if (subjectPsf === null || subjectSqft === null || subjectSqft <= 0) {
-    const missingFields = missingSubjectFields(caseFile, profile);
-    const fieldText =
-      missingFields.length > 0
-        ? missingFields.map((field) => field.label).join(" and ")
-        : "the documented override fields";
-    return profiledAnalysis({
-      status: "insufficient_data",
-      note: `Missing subject building square footage or ${profile.metricLabel}. Use ${fieldText} if you can document the missing value.`,
-      profile,
-      warnings,
-      missingFields,
-      missingDataRate,
-    });
-  }
-
-  const mismatchedYearCount = caseFile.comparables.filter(
+): { rows: Comparable[]; scope: string | null; warnings: string[] } {
+  const warnings: string[] = [];
+  const candidates = comparables.filter(
     (comp) =>
-      parcel.assessmentYear !== null &&
-      comp.assessmentYear !== null &&
-      comp.assessmentYear !== parcel.assessmentYear,
-  ).length;
-  if (mismatchedYearCount > 0) {
-    warnings = [
-      ...warnings,
-      `${mismatchedYearCount} comparable candidate${
-        mismatchedYearCount === 1 ? " was" : "s were"
-      } excluded because ${
-        mismatchedYearCount === 1 ? "its" : "their"
-      } assessment year did not match the subject assessment year.`,
-    ];
-  }
-
-  const unreconciledCandidateCount = caseFile.comparables.filter(
-    (comp) => !comp.characteristicsReconciled || !comp.assessmentComponentsReconciled,
-  ).length;
-  if (unreconciledCandidateCount > 0) {
-    warnings = [
-      ...warnings,
-      `${unreconciledCandidateCount} comparable candidate${
-        unreconciledCandidateCount === 1 ? " was" : "s were"
-      } excluded because public property-card or assessment components could not be reconciled.`,
-    ];
-  }
-  if (parcel.isMulticard) {
-    const cardMismatchCount = caseFile.comparables.filter(
-      (comp) => comp.characteristicsReconciled && comp.cardCount !== parcel.cardCount,
-    ).length;
-    if (cardMismatchCount > 0) {
-      warnings = [
-        ...warnings,
-        `${cardMismatchCount} comparable candidate${
-          cardMismatchCount === 1 ? " was" : "s were"
-        } excluded because ${
-          cardMismatchCount === 1 ? "its" : "their"
-        } residential property-card count did not match the subject.`,
-      ];
-    }
-  }
-
-  const candidates = caseFile.comparables.filter((comp) => {
-    const metricValue = comparableMetricValue(comp, profile);
-    return (
       comp.pin !== parcel.pin &&
-      samePropertyClass(parcel, comp) &&
-      sameAssessmentYear(parcel, comp) &&
-      metricValue !== null &&
-      metricValue > 0 &&
-      comp.buildingSqft !== null &&
-      comp.buildingSqft > 0 &&
-      passesProfileRequirements(parcel, comp, profile)
+      comp.propertyClass?.trim() === parcel.propertyClass.trim() &&
+      (parcel.assessmentYear === null || comp.assessmentYear === parcel.assessmentYear) &&
+      positive(comp.improvementAv) !== null &&
+      positive(comp.buildingSqft) !== null &&
+      passesProfileRequirements(parcel, comp, profile),
+  );
+  const excluded = comparables.length - candidates.length;
+  if (excluded > 0) {
+    warnings.push(
+      `${excluded} comparable candidate${excluded === 1 ? " was" : "s were"} excluded by venue matching, class, assessment-year, card, or reconciliation requirements.`,
     );
-  });
-
+  }
+  const subjectSqft = parcel.buildingSqft;
+  if (!subjectSqft) return { rows: [], scope: null, warnings };
   let selected: Comparable[] = [];
-  let scope = "township";
+  let scope: string | null = "township";
   for (const step of profile.similaritySteps) {
     const scoped = candidates.filter(
       (comp) =>
         comp.buildingSqft !== null &&
-        subjectSqft * (1 - step.sqftTolerance) <= comp.buildingSqft &&
+        comp.buildingSqft >= subjectSqft * (1 - step.sqftTolerance) &&
         comp.buildingSqft <= subjectSqft * (1 + step.sqftTolerance) &&
         (parcel.yearBuilt === null ||
           comp.yearBuilt === null ||
@@ -484,420 +163,784 @@ export function analyzeComparables(
       selected = scoped;
       scope = "township";
     }
-    if (selected.length >= profile.targetComparables) {
-      break;
-    }
+    if (selected.length >= profile.targetComparables) break;
   }
-
-  const poolRows = comparableRows(caseFile, selected, profile);
-  const actionableRows = poolRows.filter((item) => item.similarity <= MAX_ACTIONABLE_SIMILARITY);
-  if (
-    actionableRows.length >= profile.minimumComparables &&
-    actionableRows.every((item) => item.distanceKm !== null && item.distanceKm > 3)
-  ) {
-    warnings = [
-      ...warnings,
-      "Every comparable driving the calculation is more than 3 km from the subject. Verify that the locations and neighborhood context are genuinely comparable before relying on the result.",
-    ];
-  }
-
-  if (actionableRows.length < profile.minimumComparables) {
-    return profiledAnalysis({
-      status: "insufficient_data",
-      note: `Only ${actionableRows.length} parcel${
-        actionableRows.length === 1 ? "" : "s"
-      } met both the ${profile.venueLabel} rules and the ${MAX_ACTIONABLE_SIMILARITY.toFixed(
-        2,
-      )} similarity guardrail; this is too few because at least ${profile.minimumComparables} are needed. ${
-        poolRows.length > actionableRows.length
-          ? `${poolRows.length - actionableRows.length} broader match${
-              poolRows.length - actionableRows.length === 1 ? " remains" : "es remain"
-            } visible as context only.`
-          : ""
-      }`.trim(),
-      profile,
-      warnings,
-      missingDataRate,
-      scope,
-      poolSize: selected.length,
-      actionablePoolSize: actionableRows.length,
-      subjectAvPerSqft: subjectPsf,
-      pool: poolRows,
-    });
-  }
-
-  const avPsfValues = actionableRows.map((item) => item.avPerSqft);
-  const medianPsf = medianValue(avPsfValues);
-  const percentile = percentileRank(subjectPsf, avPsfValues);
-  const gap = gapPct(subjectPsf, avPsfValues);
-  const exhibits = actionableRows.filter((item) => item.avPerSqft < subjectPsf).slice(0, maxComps);
-
-  return profiledAnalysis({
-    status: "ok",
-    note: `Comparable analysis completed using the ${profile.venueLabel} matching rules and ${profile.metricLabel} per square foot.`,
-    profile,
-    warnings,
-    missingDataRate,
-    scope,
-    poolSize: selected.length,
-    actionablePoolSize: actionableRows.length,
-    subjectAvPerSqft: subjectPsf,
-    medianAvPerSqft: medianPsf,
-    percentile,
-    gap,
-    pool: poolRows,
-    exhibit: exhibits,
-  });
+  return { rows: selected, scope, warnings };
 }
 
-export function assessmentShockPct(caseFile: CaseFile): number | null {
-  const current = caseFile.parcel.currentAv;
-  const prior = caseFile.parcel.priorFinalAv;
-  if (current === null || prior === null || prior <= 0) {
-    return null;
-  }
-  return (100 * (current - prior)) / prior;
+function groupCount(total: number, share: number): number {
+  return total === 0 ? 0 : Math.max(1, Math.ceil(total * share));
 }
 
-function analyzeLandAssessment(
-  caseFile: CaseFile,
-  comparablePool: ComparableExhibit[],
-): LandAssessmentCheck {
-  const parcel = caseFile.parcel;
-  const subjectLandSqft = positive(parcel.landSqft);
-  const subjectLandPsf = safeDiv(positive(parcel.currentLandAv), subjectLandSqft);
-  if (subjectLandPsf === null || subjectLandSqft === null) {
-    return {
-      status: "insufficient_data",
-      note: "Land-component check skipped because public Land AV or land sqft is missing for the subject.",
-      subjectLandAvPerSqft: null,
-      medianLandAvPerSqft: null,
-      percentile: null,
-      gapPct: null,
-      medianComparableLandSqft: null,
-      poolSize: 0,
-      flagged: false,
-    };
-  }
-
-  const rows = comparablePool
-    .map((item) => {
-      const landSqft = positive(item.comparable.landSqft);
-      const landPsf = safeDiv(positive(item.comparable.landAv), landSqft);
-      return landSqft !== null && landPsf !== null ? { landSqft, landPsf } : null;
-    })
-    .filter((item): item is { landSqft: number; landPsf: number } => item !== null);
-  if (rows.length < 3) {
-    return {
-      status: "insufficient_data",
-      note: `Land-component check skipped because only ${rows.length} comparable parcels had usable Land AV and land sqft.`,
-      subjectLandAvPerSqft: subjectLandPsf,
-      medianLandAvPerSqft: null,
-      percentile: null,
-      gapPct: null,
-      medianComparableLandSqft: null,
-      poolSize: rows.length,
-      flagged: false,
-    };
-  }
-
-  const landPsfValues = rows.map((row) => row.landPsf);
-  const landSqftValues = rows.map((row) => row.landSqft);
-  const medianLandPsf = medianValue(landPsfValues);
-  const medianLandSqft = medianValue(landSqftValues);
-  const percentile = percentileRank(subjectLandPsf, landPsfValues);
-  const gap = gapPct(subjectLandPsf, landPsfValues);
-  const lotSizeGap =
-    medianLandSqft === null ? null : (100 * (subjectLandSqft - medianLandSqft)) / medianLandSqft;
-  const flagged = (percentile ?? 0) >= 75 && (gap ?? 0) >= 10;
-  const lotSizeDifferent = lotSizeGap !== null && Math.abs(lotSizeGap) >= 20;
-  let note = "Land AV/sqft is not unusually high compared with the selected similar homes.";
-  if (flagged) {
-    note =
-      "Land AV/sqft is high compared with selected similar homes. Check land sqft and land assessment details for a possible land or factual-error issue.";
-  } else if (lotSizeDifferent) {
-    note = `Total assessment differences may be partly explained by lot size: the subject lot is ${Math.abs(
-      lotSizeGap,
-    ).toFixed(0)}% ${lotSizeGap > 0 ? "larger" : "smaller"} than the median comparable lot.`;
-  }
-
+export function nestedSimilarityGroups<T>(rows: T[]): Record<SimilarityGroupKey, T[]> {
   return {
-    status: "ok",
-    note,
-    subjectLandAvPerSqft: subjectLandPsf,
-    medianLandAvPerSqft: medianLandPsf,
-    percentile,
-    gapPct: gap,
-    medianComparableLandSqft: medianLandSqft,
-    poolSize: rows.length,
-    flagged,
+    top25: rows.slice(0, groupCount(rows.length, 0.25)),
+    top50: rows.slice(0, groupCount(rows.length, 0.5)),
+    top75: rows.slice(0, groupCount(rows.length, 0.75)),
+    all: [...rows],
   };
 }
 
-export function buildEvidenceSummary(
-  caseFile: CaseFile,
-  taxRate: number,
-  venue: ResolvedVenue | null = null,
-  taxRateSource = `county default assumption ${(taxRate * 100).toFixed(2)}%`,
-): EvidenceSummary {
-  const parcel = caseFile.parcel;
-  const profile = profileForVenue(venue);
-  const comparableAnalysis = analyzeComparables(caseFile, 10, profile);
-  const actionableComparablePool = comparableAnalysis.pool.filter(
-    (item) => item.similarity <= comparableAnalysis.maxActionableSimilarity,
+const GROUP_LABELS: Record<SimilarityGroupKey, string> = {
+  top25: "top 25% most similar comps",
+  top50: "top 50% most similar comps",
+  top75: "top 75% most similar comps",
+  all: "all comps",
+};
+
+function comparisonPct(subject: number | null, reference: number | null): number | null {
+  return subject === null || reference === null || reference <= 0
+    ? null
+    : (100 * (subject - reference)) / reference;
+}
+
+function summarizeGroup(
+  key: SimilarityGroupKey,
+  rows: ComparableExhibit[],
+  subject: Parcel,
+  subjectImprovementPsf: number | null,
+  subjectLandPsf: number | null,
+  impliedMarketValue: number | null,
+): SimilarityGroupSummary {
+  const improvementValues = rows.map((row) => row.improvementAvPerSqft);
+  const medianImprovement = improvementValues.length ? medianValue(improvementValues) : null;
+  const recentSaleRows = rows.filter(
+    (row) => row.recentSale && row.salePricePerSqft !== null && row.salePricePerSqft > 0,
   );
-  const landAssessment = analyzeLandAssessment(caseFile, actionableComparablePool);
-  const currentTotalAv = effectiveTotalAv(caseFile);
-  const impliedMarket = currentTotalAv !== null ? currentTotalAv / ASSESSMENT_LEVEL : null;
-  const args: EvidenceArgument[] = [];
-  let tierPoints = 0;
+  const medianSalePsf =
+    recentSaleRows.length >= 3
+      ? medianValue(recentSaleRows.map((row) => row.salePricePerSqft ?? 0))
+      : null;
+  const preliminaryMarket =
+    medianSalePsf !== null && subject.buildingSqft ? medianSalePsf * subject.buildingSqft : null;
+  const landRows = rows.filter((row) => row.landAvPerSqft !== null && row.landAvPerSqft > 0);
+  const medianLand =
+    landRows.length > 0 ? medianValue(landRows.map((row) => row.landAvPerSqft ?? 0)) : null;
+  return {
+    key,
+    label: GROUP_LABELS[key],
+    count: rows.length,
+    comparablePins: rows.map((row) => row.comparable.pin),
+    medianImprovementAvPerSqft: medianImprovement,
+    subjectImprovementComparisonPct: comparisonPct(subjectImprovementPsf, medianImprovement),
+    recentSaleCount: recentSaleRows.length,
+    medianRecentSalePricePerSqft: medianSalePsf,
+    preliminarySupportedMarketValue: preliminaryMarket,
+    impliedMarketValueComparisonPct: comparisonPct(impliedMarketValue, preliminaryMarket),
+    usableLandCount: landRows.length,
+    medianLandAvPerSqft: medianLand,
+    subjectLandComparisonPct: comparisonPct(subjectLandPsf, medianLand),
+  };
+}
 
-  if (comparableAnalysis.status === "ok") {
-    const percentile = comparableAnalysis.percentile ?? 0;
-    const gap = comparableAnalysis.gapPct ?? 0;
-    let strength: ArgumentStrength = "supporting";
-    if (percentile >= 75 && gap >= 10) {
-      strength = "strong";
-      tierPoints += 2;
-    } else if (percentile >= 60 || gap >= 5) {
-      tierPoints += 1;
-    }
-    if (gap > 0 && comparableAnalysis.medianAvPerSqft && effectiveSqft(caseFile)) {
-      const targetMetric = comparableAnalysis.medianAvPerSqft * (effectiveSqft(caseFile) ?? 0);
-      const targetAv = targetTotalAv(caseFile, profile, targetMetric);
-      const [, point] = estimatedSavingsRange(
-        (currentTotalAv ?? 0) - targetAv,
-        STATE_EQUALIZER,
-        taxRate,
+function emptyGroups(): Record<SimilarityGroupKey, SimilarityGroupSummary> {
+  const parcel = {} as Parcel;
+  return Object.fromEntries(
+    (Object.keys(GROUP_LABELS) as SimilarityGroupKey[]).map((key) => [
+      key,
+      summarizeGroup(key, [], parcel, null, null, null),
+    ]),
+  ) as Record<SimilarityGroupKey, SimilarityGroupSummary>;
+}
+
+export function analyzeComparables(
+  caseFile: AnalysisCase,
+  venue: ResolvedVenue | null = null,
+): ComparableSummary {
+  const parcel = caseFile.effectiveParcel;
+  const profile = profileForVenue(venue);
+  const subjectImprovementPsf = safeDiv(
+    positive(parcel.currentImprovementAv),
+    positive(parcel.buildingSqft),
+  );
+  const subjectLandPsf = safeDiv(positive(parcel.currentLandAv), positive(parcel.landSqft));
+  const impliedMarketValue =
+    positive(parcel.currentAv) !== null ? (parcel.currentAv ?? 0) / ASSESSMENT_LEVEL : null;
+  if (caseFile.blockingMissingFields.length > 0) {
+    return {
+      status: "insufficient_data",
+      note: "Core comparable analysis cannot run until the blocking subject fields are confirmed.",
+      profileKey: profile.key,
+      profileLabel: profile.venueLabel,
+      scope: null,
+      warnings: [],
+      universe: [],
+      actionableUniverse: [],
+      bandCounts: { excellent: 0, good: 0, decent: 0, broad: 0 },
+      groups: emptyGroups(),
+      subjectImprovementAvPerSqft: subjectImprovementPsf,
+      subjectLandAvPerSqft: subjectLandPsf,
+      subjectImpliedMarketValue: impliedMarketValue,
+    };
+  }
+  const selection = selectProfilePool(parcel, caseFile.comparables, profile);
+  const universe = selection.rows
+    .map((comparable): ComparableExhibit | null => {
+      const improvementAvPerSqft = safeDiv(
+        positive(comparable.improvementAv),
+        positive(comparable.buildingSqft),
       );
-      args.push({
-        argumentType: "uniformity",
-        strength,
-        text: `Your ${profile.metricLabel} per square foot is higher than ${percentile.toFixed(
-          0,
-        )}% of ${comparableAnalysis.actionablePoolSize} sufficiently similar homes and ${gap.toFixed(
-          0,
-        )}% above their median.`,
-        targetAv,
-        estimatedSavings: point,
-      });
-    }
+      if (improvementAvPerSqft === null) return null;
+      const score = comparableSimilarity(parcel, comparable);
+      const band = similarityBand(score);
+      if (band === null || score > MAX_DISPLAYED_SIMILARITY) return null;
+      return {
+        comparable,
+        improvementAvPerSqft,
+        landAvPerSqft: safeDiv(positive(comparable.landAv), positive(comparable.landSqft)),
+        salePricePerSqft: safeDiv(
+          positive(comparable.salePrice),
+          positive(comparable.buildingSqft),
+        ),
+        distanceKm: distanceKm(parcel.lat, parcel.lon, comparable.lat, comparable.lon),
+        similarity: score,
+        band,
+        recentSale: isRecentSaleDate(comparable.saleDate, parcel.assessmentYear),
+      };
+    })
+    .filter((row): row is ComparableExhibit => row !== null)
+    .sort(
+      (a, b) => a.similarity - b.similarity || a.comparable.pin.localeCompare(b.comparable.pin),
+    );
+  const actionableUniverse = universe.filter((row) => row.similarity <= MAX_ACTIONABLE_SIMILARITY);
+  const grouped = nestedSimilarityGroups(universe);
+  const groups = Object.fromEntries(
+    (Object.keys(grouped) as SimilarityGroupKey[]).map((key) => [
+      key,
+      summarizeGroup(
+        key,
+        grouped[key],
+        parcel,
+        subjectImprovementPsf,
+        subjectLandPsf,
+        impliedMarketValue,
+      ),
+    ]),
+  ) as Record<SimilarityGroupKey, SimilarityGroupSummary>;
+  const bandCounts = { excellent: 0, good: 0, decent: 0, broad: 0 } satisfies Record<
+    SimilarityBandName,
+    number
+  >;
+  for (const row of universe) bandCounts[row.band] += 1;
+  const warnings = [...selection.warnings];
+  if (
+    actionableUniverse.length >= 3 &&
+    actionableUniverse.every((row) => row.distanceKm !== null && row.distanceKm > 3)
+  ) {
+    warnings.push(
+      "Every actionable comparable is more than 3 km from the subject. Verify local differences before relying on the result.",
+    );
   }
-
-  if (landAssessment.flagged) {
-    tierPoints += 1;
-    args.push({
-      argumentType: "land_component",
-      strength: "supporting",
-      text: landAssessment.note,
-      targetAv: null,
-      estimatedSavings: null,
-    });
+  if (caseFile.corrections.length > 0) {
+    warnings.push(
+      "Confirmed user corrections were used in the comparable search and calculations.",
+    );
   }
+  const status =
+    isCondo(parcel) && universe.length === 0
+      ? "condo"
+      : actionableUniverse.length >= 3
+        ? "ok"
+        : "insufficient_data";
+  return {
+    status,
+    note:
+      actionableUniverse.length >= 3
+        ? `Comparable analysis used ${actionableUniverse.length} actionable rows; broad rows remain context only.`
+        : `Only ${actionableUniverse.length} actionable comparable${actionableUniverse.length === 1 ? " was" : "s were"} available; at least three are required for savings calculations.`,
+    profileKey: profile.key,
+    profileLabel: profile.venueLabel,
+    scope: selection.scope,
+    warnings,
+    universe,
+    actionableUniverse,
+    bandCounts,
+    groups,
+    subjectImprovementAvPerSqft: subjectImprovementPsf,
+    subjectLandAvPerSqft: subjectLandPsf,
+    subjectImpliedMarketValue: impliedMarketValue,
+  };
+}
 
-  let evidenceValue: number | null = null;
-  let evidenceSource: string | null = null;
-  let evidenceSourceType: ValueEvidence["sourceType"] = null;
-  let evidenceDate: string | null = null;
-  const policy = valueEvidencePolicy(venue);
-  const assessmentYear = parcel.assessmentYear;
-  const latestRecordedSale = [...caseFile.subjectSales].sort((a, b) =>
+function officialRule(venue: ResolvedVenue | null): { summary: string; url: string } {
+  if (venue === "bor") {
+    return {
+      summary:
+        "Official venue rule: BOR rules govern the evidence and documents required for the selected contention.",
+      url: BOR_RULES_URL,
+    };
+  }
+  if (venue === "ptab") {
+    return {
+      summary:
+        "Official venue rule: PTAB requires verified, relevant evidence and may require adjustments not available in public data.",
+      url: PTAB_RULES_URL,
+    };
+  }
+  return {
+    summary:
+      "Official venue rule: the Assessor accepts documented uniformity, value, and property-description evidence under its published guidance.",
+    url: CCAO_APPEALS_URL,
+  };
+}
+
+function gapStatus(gap: number | null): EvidenceStatus {
+  if (gap === null) return "unavailable";
+  if (gap >= PROMISING_GAP_PCT) return "promising";
+  if (gap >= MIN_POTENTIALLY_USEFUL_GAP_PCT) return "potentially_useful";
+  if (gap > 0) return "weak_or_incomplete";
+  return "does_not_support_reduction";
+}
+
+function uniformityCandidate(
+  caseFile: AnalysisCase,
+  summary: ComparableSummary,
+  venue: ResolvedVenue | null,
+): EvidenceCandidate {
+  const official = officialRule(venue);
+  const subject = summary.subjectImprovementAvPerSqft;
+  const rows = summary.actionableUniverse;
+  if (subject === null || rows.length < 3) {
+    return {
+      type: "uniformity",
+      name: "Uniformity",
+      available: false,
+      selectable: true,
+      status: "unavailable",
+      shortReason:
+        "Fewer than three actionable comparables or a required subject value is missing.",
+      screeningRule:
+        "Appeal Compass screening threshold: at least three rows with similarity at or below 0.35.",
+      officialRuleSummary: official.summary,
+      officialRuleUrl: official.url,
+      dataUsed: [],
+      limitations: ["Broad comparables do not drive this method."],
+    };
+  }
+  const values = rows.map((row) => row.improvementAvPerSqft);
+  const percentile = percentileRank(subject, values);
+  const gap = gapPct(subject, values);
+  const status: EvidenceStatus =
+    (percentile ?? 0) >= 75 && (gap ?? 0) >= 10
+      ? "promising"
+      : (percentile ?? 0) >= 60 || (gap ?? 0) >= 5
+        ? "potentially_useful"
+        : (gap ?? 0) > 0
+          ? "weak_or_incomplete"
+          : "does_not_support_reduction";
+  return {
+    type: "uniformity",
+    name: "Uniformity",
+    available: true,
+    selectable: true,
+    status,
+    shortReason: `Subject percentile ${percentile?.toFixed(0) ?? "unavailable"}; Improvement AV/sqft gap ${gap?.toFixed(1) ?? "unavailable"}%.`,
+    screeningRule:
+      "Appeal Compass screening threshold: promising requires percentile at least 75 and gap at least 10%; potentially useful requires percentile at least 60 or gap at least 5%.",
+    officialRuleSummary: official.summary,
+    officialRuleUrl: official.url,
+    dataUsed: rows.map((row) => row.comparable.pinFormatted),
+    limitations: ["The percentile and gap thresholds are product screens, not official rules."],
+    calculationInputs: { percentile, gapPct: gap, comparableCount: rows.length },
+  };
+}
+
+function valueCandidate(
+  type: "recorded_sale" | "reported_purchase" | "appraisal",
+  value: number | null,
+  date: string | null,
+  summary: ComparableSummary,
+  caseFile: AnalysisCase,
+  venue: ResolvedVenue | null,
+  duplicate = false,
+): EvidenceCandidate {
+  const official = officialRule(venue);
+  const names = {
+    recorded_sale: "Recorded subject sale",
+    reported_purchase: "User-reported subject purchase",
+    appraisal: "User-provided appraisal",
+  } as const;
+  if (value === null || date === null) {
+    return {
+      type,
+      name: names[type],
+      available: false,
+      selectable: false,
+      status: "unavailable",
+      shortReason: "This evidence was not provided or found.",
+      screeningRule: `Appeal Compass screening threshold: ${valueEvidencePolicy(venue).description}; 5% and 10% implied-value gap screens.`,
+      officialRuleSummary: official.summary,
+      officialRuleUrl: official.url,
+      dataUsed: [],
+      limitations: [],
+    };
+  }
+  const implied = summary.subjectImpliedMarketValue;
+  const qualifies = isQualifyingValueEvidenceDate(
+    date,
+    caseFile.effectiveParcel.assessmentYear,
+    venue,
+  );
+  const gap = implied === null ? null : (100 * (implied - value)) / value;
+  let status = gapStatus(gap);
+  if (!qualifies || !caseFile.effectiveParcel.assessmentComponentsReconciled) {
+    status = "weak_or_incomplete";
+  }
+  return {
+    type,
+    name: names[type],
+    available: true,
+    selectable: true,
+    status,
+    shortReason:
+      implied === null
+        ? "Total AV is unavailable, so the implied-value comparison cannot be calculated."
+        : `${Math.abs(gap ?? 0).toFixed(1)}% ${gap !== null && gap >= 0 ? "above" : "below"} the evidence value${qualifies ? "" : "; date is outside the product screen"}.`,
+    screeningRule: `Appeal Compass screening threshold: ${valueEvidencePolicy(venue).description}; 5% is potentially useful and 10% is promising.`,
+    officialRuleSummary: official.summary,
+    officialRuleUrl: official.url,
+    dataUsed: [`${date}: ${value}`],
+    limitations: [
+      ...(!qualifies
+        ? ["The evidence date is outside the configured product screening window."]
+        : []),
+      ...(duplicate
+        ? ["This may describe the same transaction as another subject-value entry."]
+        : []),
+    ],
+    calculationInputs: {
+      evidenceValue: value,
+      evidenceDate: date,
+      impliedMarketValue: implied,
+      gapPct: gap,
+    },
+  };
+}
+
+function firstActionableGroup(
+  rows: ComparableExhibit[],
+  predicate: (row: ComparableExhibit) => boolean = () => true,
+): { key: SimilarityGroupKey; rows: ComparableExhibit[] } | null {
+  const groups = nestedSimilarityGroups(rows);
+  for (const key of ["top25", "top50", "top75", "all"] as SimilarityGroupKey[]) {
+    const usable = groups[key].filter(predicate);
+    if (usable.length >= 3) return { key, rows: usable };
+  }
+  return null;
+}
+
+function comparableSalesCandidate(
+  caseFile: AnalysisCase,
+  summary: ComparableSummary,
+  venue: ResolvedVenue | null,
+): EvidenceCandidate {
+  const official = officialRule(venue);
+  const group = firstActionableGroup(
+    summary.actionableUniverse,
+    (row) => row.recentSale && row.salePricePerSqft !== null && row.salePricePerSqft > 0,
+  );
+  if (!group || !caseFile.effectiveParcel.buildingSqft) {
+    return {
+      type: "comparable_sales",
+      name: "Comparable-sales market evidence",
+      available: false,
+      selectable: true,
+      status: "unavailable",
+      shortReason: "Insufficient recent sales.",
+      screeningRule:
+        "Appeal Compass screening threshold: first nested actionable group with at least three recent-sale comparables.",
+      officialRuleSummary: official.summary,
+      officialRuleUrl: official.url,
+      dataUsed: [],
+      limitations: ["This is an unadjusted screening model, not an appraisal."],
+    };
+  }
+  const medianSalePsf = medianValue(group.rows.map((row) => row.salePricePerSqft ?? 0));
+  const preliminary = medianSalePsf * caseFile.effectiveParcel.buildingSqft;
+  const gap = comparisonPct(summary.subjectImpliedMarketValue, preliminary);
+  return {
+    type: "comparable_sales",
+    name: "Comparable-sales market evidence",
+    available: true,
+    selectable: true,
+    status: gapStatus(gap),
+    shortReason: `${GROUP_LABELS[group.key]} supplied ${group.rows.length} recent sales at a median ${medianSalePsf.toFixed(2)} per sqft.`,
+    screeningRule:
+      "Appeal Compass screening threshold: 5% implied-value gap is potentially useful and 10% is promising.",
+    officialRuleSummary: official.summary,
+    officialRuleUrl: official.url,
+    dataUsed: group.rows.map((row) => row.comparable.pinFormatted),
+    limitations: [
+      "Unadjusted for condition, exact location, lot differences, renovations, garages, amenities, sale concessions, and market time.",
+      "Transaction type is not inferred from the available public fields.",
+    ],
+    calculationInputs: {
+      groupKey: group.key,
+      groupLabel: GROUP_LABELS[group.key],
+      medianSalePricePerSqft: medianSalePsf,
+      preliminarySupportedMarketValue: preliminary,
+      gapPct: gap,
+      comparablePins: group.rows.map((row) => row.comparable.pin),
+    },
+  };
+}
+
+function landCandidate(
+  caseFile: AnalysisCase,
+  summary: ComparableSummary,
+  venue: ResolvedVenue | null,
+): EvidenceCandidate {
+  const official = officialRule(venue);
+  const subjectLandPsf = summary.subjectLandAvPerSqft;
+  const group = firstActionableGroup(
+    summary.actionableUniverse,
+    (row) => row.landAvPerSqft !== null && row.landAvPerSqft > 0,
+  );
+  if (!group || subjectLandPsf === null || !caseFile.effectiveParcel.landSqft) {
+    return {
+      type: "land",
+      name: "Land overassessment",
+      available: false,
+      selectable: true,
+      status: "unavailable",
+      shortReason: "Insufficient land data.",
+      screeningRule:
+        "Appeal Compass screening threshold: at least three actionable land rows; promising requires percentile at least 75 and gap at least 10%.",
+      officialRuleSummary: official.summary,
+      officialRuleUrl: official.url,
+      dataUsed: [],
+      limitations: ["The percentile and gap threshold is not an official Cook County rule."],
+    };
+  }
+  const values = group.rows.map((row) => row.landAvPerSqft ?? 0);
+  const median = medianValue(values);
+  const percentile = percentileRank(subjectLandPsf, values);
+  const gap = gapPct(subjectLandPsf, values);
+  const status: EvidenceStatus =
+    (percentile ?? 0) >= 75 && (gap ?? 0) >= 10
+      ? "promising"
+      : (gap ?? 0) > 0
+        ? "weak_or_incomplete"
+        : "does_not_support_reduction";
+  return {
+    type: "land",
+    name: "Land overassessment",
+    available: true,
+    selectable: true,
+    status,
+    shortReason: `Land AV/sqft percentile ${percentile?.toFixed(0)}; gap ${gap?.toFixed(1)}%.`,
+    screeningRule:
+      "Appeal Compass screening threshold: promising requires land percentile at least 75 and Land AV/sqft gap at least 10%.",
+    officialRuleSummary: official.summary,
+    officialRuleUrl: official.url,
+    dataUsed: group.rows.map((row) => row.comparable.pinFormatted),
+    limitations: ["Lot and location differences require manual review."],
+    calculationInputs: {
+      groupKey: group.key,
+      groupLabel: GROUP_LABELS[group.key],
+      medianLandAvPerSqft: median,
+      percentile,
+      gapPct: gap,
+      comparablePins: group.rows.map((row) => row.comparable.pin),
+    },
+  };
+}
+
+export function buildEvidenceCandidates(
+  caseFile: AnalysisCase,
+  summary: ComparableSummary,
+  venue: ResolvedVenue | null,
+): EvidenceCandidate[] {
+  const recorded = [...caseFile.subjectSales].sort((a, b) =>
     b.saleDate.localeCompare(a.saleDate),
   )[0];
-  const reportedCandidate = caseFile.userEvidence.purchasePrice
-    ? {
-        value: caseFile.userEvidence.purchasePrice,
-        date: caseFile.userEvidence.purchaseDate,
-        source: `reported purchase of the subject property on ${caseFile.userEvidence.purchaseDate}`,
-        type: "reported_purchase" as const,
-      }
-    : caseFile.userEvidence.appraisalValue
-      ? {
-          value: caseFile.userEvidence.appraisalValue,
-          date: caseFile.userEvidence.appraisalDate,
-          source: `reported appraisal of the subject property dated ${caseFile.userEvidence.appraisalDate}`,
-          type: "reported_appraisal" as const,
-        }
-      : null;
-  const recordedCandidate = latestRecordedSale
-    ? {
-        value: latestRecordedSale.salePrice,
-        date: latestRecordedSale.saleDate,
-        source: `recorded sale of the subject property on ${latestRecordedSale.saleDate}`,
-        type: "recorded_sale" as const,
-      }
-    : null;
-  const qualifyingReported =
-    reportedCandidate &&
-    isQualifyingValueEvidenceDate(reportedCandidate.date, assessmentYear, venue)
-      ? reportedCandidate
-      : null;
-  const qualifyingRecorded =
-    recordedCandidate &&
-    isQualifyingValueEvidenceDate(recordedCandidate.date, assessmentYear, venue)
-      ? recordedCandidate
-      : null;
-  const selectedValueEvidence =
-    qualifyingReported ?? qualifyingRecorded ?? reportedCandidate ?? recordedCandidate;
-  const valueEvidenceQualifies =
-    selectedValueEvidence !== null &&
-    isQualifyingValueEvidenceDate(selectedValueEvidence.date, assessmentYear, venue);
-  if (selectedValueEvidence) {
-    evidenceValue = selectedValueEvidence.value;
-    evidenceSource = selectedValueEvidence.source;
-    evidenceSourceType = selectedValueEvidence.type;
-    evidenceDate = selectedValueEvidence.date;
-  }
+  const entered = caseFile.subjectValueEvidence;
+  const likelyDuplicate = Boolean(
+    recorded &&
+      entered?.type === "purchase" &&
+      Math.abs(recorded.salePrice - entered.value) <= 1 &&
+      recorded.saleDate === entered.date,
+  );
+  const candidates: EvidenceCandidate[] = [
+    uniformityCandidate(caseFile, summary, venue),
+    valueCandidate(
+      "recorded_sale",
+      recorded?.salePrice ?? null,
+      recorded?.saleDate ?? null,
+      summary,
+      caseFile,
+      venue,
+      likelyDuplicate,
+    ),
+    valueCandidate(
+      "reported_purchase",
+      entered?.type === "purchase" ? entered.value : null,
+      entered?.type === "purchase" ? entered.date : null,
+      summary,
+      caseFile,
+      venue,
+      likelyDuplicate,
+    ),
+    valueCandidate(
+      "appraisal",
+      entered?.type === "appraisal" ? entered.value : null,
+      entered?.type === "appraisal" ? entered.date : null,
+      summary,
+      caseFile,
+      venue,
+    ),
+    comparableSalesCandidate(caseFile, summary, venue),
+    landCandidate(caseFile, summary, venue),
+  ];
+  const official = officialRule(venue);
+  candidates.push({
+    type: "property_corrections",
+    name: "Documented subject-property-data corrections",
+    available: caseFile.corrections.length > 0,
+    selectable: caseFile.corrections.length > 0,
+    status: caseFile.corrections.length > 0 ? "potentially_useful" : "unavailable",
+    shortReason:
+      caseFile.corrections.length > 0
+        ? `${caseFile.corrections.length} effective field change${caseFile.corrections.length === 1 ? "" : "s"} will be documented in the packet.`
+        : "No subject property data was added or corrected.",
+    screeningRule:
+      "Appeal Compass treatment: confirmed corrections affect all calculations; they are packet evidence, not a separate savings method.",
+    officialRuleSummary: official.summary,
+    officialRuleUrl: official.url,
+    dataUsed: caseFile.corrections.map((item) => item.field),
+    limitations: ["The owner must include the identified proof separately."],
+  });
+  return candidates;
+}
 
-  let valueGapPct: number | null = null;
-  if (evidenceValue && impliedMarket && evidenceValue > 0 && evidenceValue < impliedMarket) {
-    const over = (100 * (impliedMarket - evidenceValue)) / evidenceValue;
-    valueGapPct = over;
-    if (
-      valueEvidenceQualifies &&
-      parcel.assessmentComponentsReconciled &&
-      parcel.characteristicsReconciled &&
-      over >= MIN_ACTIONABLE_OVERVALUE_GAP_PCT
-    ) {
-      tierPoints += over >= 10 ? 2 : 1;
-      const targetAv = evidenceValue * ASSESSMENT_LEVEL;
-      const [, point] = estimatedSavingsRange(
-        (currentTotalAv ?? 0) - targetAv,
-        STATE_EQUALIZER,
-        taxRate,
-      );
-      args.push({
-        argumentType: "overvaluation",
-        strength: over >= 10 ? "strong" : "supporting",
-        text: `The implied market value is ${over.toFixed(1)}% above the ${evidenceSource} of $${Math.round(
-          evidenceValue,
-        ).toLocaleString("en-US")}.`,
-        targetAv,
-        estimatedSavings: point,
-      });
-    }
-  } else if (evidenceValue && impliedMarket && evidenceValue > 0) {
-    valueGapPct = (100 * (impliedMarket - evidenceValue)) / evidenceValue;
-  }
+function candidateByMethod(
+  candidates: EvidenceCandidate[],
+  method: SavingsMethod,
+): EvidenceCandidate {
+  const candidate = candidates.find((item) => item.type === method);
+  if (!candidate) throw new Error(`Missing evidence candidate ${method}.`);
+  return candidate;
+}
 
-  let valueExplanation = `No qualifying subject-property sale, reported purchase, or appraisal was available for the ${
-    assessmentYear ?? "selected"
-  } assessment under the ${policy.description}. Sales shown for comparable properties are context only and are not subject-property value evidence.`;
-  let valueActionability: ValueEvidence["actionability"] = "none";
-  if (evidenceValue !== null && impliedMarket === null) {
-    valueActionability = "context_only";
-    valueExplanation =
-      "A sale or appraisal was available, but Total AV was unavailable, so implied market value could not be calculated.";
-  } else if (evidenceValue !== null && impliedMarket !== null && valueGapPct !== null) {
-    if (!valueEvidenceQualifies) {
-      valueActionability = "context_only";
-      valueExplanation = `The ${evidenceSource} falls outside the ${policy.description} for the ${
-        assessmentYear ?? "selected"
-      } assessment, so it is context only and cannot produce an argument or savings estimate.`;
-    } else if (!parcel.assessmentComponentsReconciled || !parcel.characteristicsReconciled) {
-      valueActionability = "context_only";
-      valueExplanation =
-        "The value evidence is within the screening window, but the subject's public property-card or assessment components could not be reconciled, so no automated reduction or savings estimate is produced.";
-    } else if (valueGapPct >= MIN_ACTIONABLE_OVERVALUE_GAP_PCT) {
-      valueActionability = "actionable";
-      valueExplanation = `The ${valueGapPct.toFixed(1)}% gap meets the ${MIN_ACTIONABLE_OVERVALUE_GAP_PCT}% actionability threshold under the ${policy.description}.`;
-    } else if (valueGapPct > 0) {
-      valueActionability = "context_only";
-      valueExplanation = `The ${valueGapPct.toFixed(1)}% gap is below the ${MIN_ACTIONABLE_OVERVALUE_GAP_PCT}% actionability threshold, so it is context only and does not produce an argument or savings estimate.`;
-    } else {
-      valueActionability = "context_only";
-      valueExplanation =
-        "The implied market value does not exceed the available sale or appraisal value, so this value check does not support a reduction.";
-    }
-  }
+function baseCalculation(
+  method: SavingsMethod,
+  candidate: EvidenceCandidate,
+  caseFile: AnalysisCase,
+  taxRate: number,
+  taxRateSource: string,
+): SavingsCalculation {
+  const total = positive(caseFile.effectiveParcel.currentAv);
+  return {
+    method,
+    evidenceName: candidate.name,
+    status: candidate.status,
+    available: false,
+    limitation: candidate.available ? null : candidate.shortReason,
+    formula: "Calculation unavailable.",
+    groupLabel: null,
+    comparablePins: [],
+    comparableCount: 0,
+    currentTotalAv: total,
+    targetTotalAv: null,
+    avReduction: null,
+    currentImpliedMarketValue: total === null ? null : total / ASSESSMENT_LEVEL,
+    evidenceMarketValue: null,
+    targetMarketValueEquivalent: null,
+    estimatedCurrentTax: total === null ? null : total * STATE_EQUALIZER * taxRate,
+    estimatedTargetTax: null,
+    annualSavingsPoint: null,
+    annualSavingsLow: null,
+    annualSavingsHigh: null,
+    stateEqualizer: STATE_EQUALIZER,
+    taxRate,
+    taxRateSource,
+    assessmentLevel: ASSESSMENT_LEVEL,
+    warnings: [],
+    disclaimer: `${NOT_LEGAL_ADVICE} This exploratory estimate is not a guaranteed reduction.`,
+  };
+}
 
-  const publicSqft = positive(parcel.buildingSqft);
-  const userSqft = positive(caseFile.userEvidence.actualSqft);
-  if (userSqft !== null && publicSqft !== null) {
-    const sqftDelta = publicSqft - userSqft;
-    if (Math.abs(sqftDelta) / publicSqft >= 0.05) {
-      tierPoints += 2;
-      args.push({
-        argumentType: "property_description",
-        strength: "strong",
-        text: `The Assessor record shows ${publicSqft.toLocaleString(
-          "en-US",
-        )} sqft, but you reported ${userSqft.toLocaleString(
-          "en-US",
-        )} sqft. A documented factual correction is strongest at the Assessor level.`,
-        targetAv: null,
-        estimatedSavings: null,
-      });
-    }
+function finalizeCalculation(
+  calculation: SavingsCalculation,
+  target: number | null,
+): SavingsCalculation {
+  const current = calculation.currentTotalAv;
+  if (current === null || target === null || target <= 0) {
+    return {
+      ...calculation,
+      limitation: calculation.limitation ?? "Required AV inputs are unavailable.",
+    };
   }
-
-  const shock = assessmentShockPct(caseFile);
-  if (shock !== null && shock >= 15) {
-    tierPoints += 1;
-    args.push({
-      argumentType: "assessment_shock",
-      strength: "supporting",
-      text: `Current assessed value increased ${shock.toFixed(0)}% from the prior final value.`,
-      targetAv: null,
-      estimatedSavings: null,
-    });
-  }
-
-  let tier: EvidenceTier;
-  let tierMessage: string;
-  if (tierPoints >= 3) {
-    tier = "STRONG";
-    tierMessage = "Multiple independent grounds support spending time on an appeal.";
-  } else if (tierPoints >= 1) {
-    tier = "MODERATE";
-    tierMessage = "At least one actionable public-data ground supports closer review.";
-  } else {
-    tier = "LIMITED";
-    tierMessage =
-      comparableAnalysis.status === "ok"
-        ? "This screen did not find an actionable public-data ground for a reduction."
-        : "Comparable uniformity could not be established, and no other actionable public-data ground was found.";
-  }
-
-  const pointSavings = Math.max(0, ...args.map((argument) => argument.estimatedSavings ?? 0));
-  const estimatedCurrentTax = (currentTotalAv ?? 0) * STATE_EQUALIZER * taxRate;
-  if (estimatedCurrentTax > 0 && pointSavings / estimatedCurrentTax >= 0.2) {
-    comparableAnalysis.warnings.push(
-      `The screening savings estimate is unusually large at ${(
-        (100 * pointSavings) / estimatedCurrentTax
-      ).toFixed(
-        0,
-      )}% of the estimated tax attributable to current AV. Verify every property fact, comparable, and target reduction before relying on it.`,
+  const targetTotalAv = Math.round(target);
+  const reduction = Math.max(0, current - targetTotalAv);
+  const point = reduction * calculation.stateEqualizer * calculation.taxRate;
+  const currentTax = current * calculation.stateEqualizer * calculation.taxRate;
+  const warnings = [...calculation.warnings];
+  if (currentTax > 0 && point / currentTax >= 0.2) {
+    warnings.push(
+      "This method's savings estimate is unusually large relative to estimated current tax. Verify every input and comparable.",
     );
   }
   return {
-    tier,
-    tierMessage,
-    comparableAnalysis,
-    landAssessment,
-    arguments: args,
-    impliedMarketValue: impliedMarket,
-    valueEvidence: {
-      sourceType: evidenceSourceType,
-      sourceLabel: evidenceSource,
-      value: evidenceValue,
-      date: evidenceDate,
-      impliedMarketValue: impliedMarket,
-      gapPct: valueGapPct,
-      actionability: valueActionability,
-      explanation: valueExplanation,
-    },
-    savingsAssumptions: {
-      taxRate,
-      taxRateSource,
-      stateEqualizer: STATE_EQUALIZER,
-      low: pointSavings * 0.8,
-      point: pointSavings,
-      high: pointSavings * 1.2,
-    },
-    disclaimers: [
-      NOT_LEGAL_ADVICE,
-      "Estimated savings are ranges, not promises. Taxes must still be paid on time.",
-    ],
+    ...calculation,
+    available: true,
+    limitation:
+      reduction > 0
+        ? calculation.limitation
+        : "The calculated target is not below current Total AV, so this method produces no savings.",
+    targetTotalAv,
+    avReduction: reduction,
+    targetMarketValueEquivalent: targetTotalAv / calculation.assessmentLevel,
+    estimatedTargetTax: targetTotalAv * calculation.stateEqualizer * calculation.taxRate,
+    annualSavingsPoint: point,
+    annualSavingsLow: point * 0.8,
+    annualSavingsHigh: point * 1.2,
+    warnings,
   };
+}
+
+export function buildSavingsCalculations(
+  caseFile: AnalysisCase,
+  summary: ComparableSummary,
+  candidates: EvidenceCandidate[],
+  taxRate: number,
+  taxRateSource: string,
+): SavingsCalculation[] {
+  const calculations: SavingsCalculation[] = [];
+  for (const method of [
+    "uniformity",
+    "recorded_sale",
+    "reported_purchase",
+    "appraisal",
+    "comparable_sales",
+    "land",
+  ] as SavingsMethod[]) {
+    const candidate = candidateByMethod(candidates, method);
+    let calculation = baseCalculation(method, candidate, caseFile, taxRate, taxRateSource);
+    if (method === "uniformity") {
+      const group = firstActionableGroup(summary.actionableUniverse);
+      if (
+        group &&
+        caseFile.effectiveParcel.buildingSqft &&
+        caseFile.effectiveParcel.currentLandAv
+      ) {
+        const median = medianValue(group.rows.map((row) => row.improvementAvPerSqft));
+        calculation = {
+          ...calculation,
+          formula:
+            "Target Improvement AV = chosen-group median Improvement AV/sqft × subject building sqft; Target Total AV = effective Land AV + Target Improvement AV.",
+          groupLabel: GROUP_LABELS[group.key],
+          comparablePins: group.rows.map((row) => row.comparable.pin),
+          comparableCount: group.rows.length,
+        };
+        calculation = finalizeCalculation(
+          calculation,
+          median * caseFile.effectiveParcel.buildingSqft + caseFile.effectiveParcel.currentLandAv,
+        );
+      }
+    } else if (
+      method === "recorded_sale" ||
+      method === "reported_purchase" ||
+      method === "appraisal"
+    ) {
+      const evidenceValue = Number(candidate.calculationInputs?.evidenceValue ?? 0) || null;
+      calculation = {
+        ...calculation,
+        formula: "Target Total AV = subject evidence market value × residential assessment level.",
+        evidenceMarketValue: evidenceValue,
+      };
+      calculation = finalizeCalculation(
+        calculation,
+        evidenceValue === null ? null : evidenceValue * ASSESSMENT_LEVEL,
+      );
+    } else if (method === "comparable_sales") {
+      const preliminary =
+        Number(candidate.calculationInputs?.preliminarySupportedMarketValue ?? 0) || null;
+      const pins = (candidate.calculationInputs?.comparablePins as string[] | undefined) ?? [];
+      calculation = {
+        ...calculation,
+        formula:
+          "Preliminary supported market value = median recent sale price/sqft × subject building sqft; Target Total AV = that value × assessment level.",
+        groupLabel: String(candidate.calculationInputs?.groupLabel ?? "") || null,
+        comparablePins: pins,
+        comparableCount: pins.length,
+        evidenceMarketValue: preliminary,
+      };
+      calculation = finalizeCalculation(
+        calculation,
+        preliminary === null ? null : preliminary * ASSESSMENT_LEVEL,
+      );
+    } else {
+      const medianLand = Number(candidate.calculationInputs?.medianLandAvPerSqft ?? 0) || null;
+      const pins = (candidate.calculationInputs?.comparablePins as string[] | undefined) ?? [];
+      const parcel = caseFile.effectiveParcel;
+      calculation = {
+        ...calculation,
+        formula:
+          "Target Land AV = chosen-group median Land AV/sqft × effective subject land sqft; Target Total AV = effective Improvement AV + Target Land AV.",
+        groupLabel: String(candidate.calculationInputs?.groupLabel ?? "") || null,
+        comparablePins: pins,
+        comparableCount: pins.length,
+      };
+      calculation = finalizeCalculation(
+        calculation,
+        medianLand && parcel.landSqft && parcel.currentImprovementAv
+          ? medianLand * parcel.landSqft + parcel.currentImprovementAv
+          : null,
+      );
+    }
+    calculations.push(calculation);
+  }
+  return calculations;
+}
+
+export function buildAnalysisResult(input: {
+  caseFile: AnalysisCase;
+  venue: ResolvedVenue | null;
+  revision: number;
+  taxRate: number;
+  taxRateSource: string;
+  notices: AnalysisResult["notices"];
+}): AnalysisResult {
+  const comparableSummary = analyzeComparables(input.caseFile, input.venue);
+  const evidenceCandidates = buildEvidenceCandidates(
+    input.caseFile,
+    comparableSummary,
+    input.venue,
+  );
+  const savingsCalculations = buildSavingsCalculations(
+    input.caseFile,
+    comparableSummary,
+    evidenceCandidates,
+    input.taxRate,
+    input.taxRateSource,
+  );
+  return {
+    revision: input.revision,
+    subject: {
+      publicParcel: input.caseFile.publicParcel,
+      effectiveParcel: input.caseFile.effectiveParcel,
+      provenance: input.caseFile.provenance,
+      corrections: input.caseFile.corrections,
+      blockingMissingFields: input.caseFile.blockingMissingFields,
+      optionalMissingFields: input.caseFile.optionalMissingFields,
+    },
+    propertyCards: input.caseFile.propertyCards,
+    assessmentHistory: input.caseFile.assessmentHistory,
+    subjectSales: input.caseFile.subjectSales,
+    subjectValueEvidence: input.caseFile.subjectValueEvidence,
+    comparableSummary,
+    evidenceCandidates,
+    savingsCalculations,
+    notices: input.notices,
+    warnings: [...new Set([...input.caseFile.dataWarnings, ...comparableSummary.warnings])],
+  };
+}
+
+export function selectedEvidenceCandidates(
+  candidates: EvidenceCandidate[],
+  evidenceTypes: EvidenceType[],
+): EvidenceCandidate[] {
+  const selected = new Set(evidenceTypes);
+  return candidates.filter((candidate) => selected.has(candidate.type));
 }

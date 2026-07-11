@@ -1,23 +1,41 @@
 # Evidence Precedence
 
-Appeal Compass keeps official public data separate from homeowner-entered values. Positive public
-values win when present. User-supplied values are fallback-only, labeled as user-supplied, and
-never silently replace official public data.
+Appeal Compass keeps original public facts and confirmed effective facts separately auditable.
+Public values initialize the subject-review step. After explicit confirmation, a documented user
+correction overrides the corresponding public value for every downstream calculation without
+altering or deleting the original public value.
 
-| Field | Public data | User data | Rule |
-| --- | --- | --- | --- |
-| Building sqft | Wins when present and positive | Fallback only when public sqft is missing or non-positive | User sqft never silently overrides public sqft; a documented conflict of 5% or more produces a property-description argument. |
-| Total AV | Wins when present and positive | Fallback only when public total AV is missing or non-positive | Used for market-value context, overvaluation checks, total-value breakdowns, and savings estimates. It must not generate standalone residential uniformity evidence. |
-| Improvement AV | Wins when present and positive | Fallback only when public improvement AV is missing or non-positive | Used for residential comparable uniformity evidence in every venue. User improvement AV is labeled user-supplied. |
-| Land AV | Wins when present and positive | No user fallback in the app | Used only for the separate Land AV/land sqft diagnostic. |
-| Sale price | A qualifying subject recorded sale may be used | A qualifying user purchase supersedes a recorded sale | Both are labeled by source. The date window is tied to the assessment year and venue, and a positive implied-value gap must reach 5% to become actionable. Comparable-property sales are context only. |
-| Appraisal | Not public | One documented subject appraisal may be entered instead of a purchase | The appraisal is labeled user-supplied and screened by assessment year and venue. Stale evidence remains context only; a qualifying positive implied-value gap must reach 5% to become actionable. |
+| Provenance | Meaning | Downstream treatment |
+| --- | --- | --- |
+| `public` | Unchanged public value | Used as the effective value. |
+| `user_corrected` | Documented replacement for a present public value | Overrides the public value for repository selection, similarity, evidence, savings, PDF, and XLSX calculations. |
+| `user_added` | Documented value supplied where public data was missing | Becomes the effective value for the same downstream uses. |
+| `derived` | Arithmetic counterpart created by AV reconciliation | Used as an effective value, exported with the exact derivation, and does not require separate proof. |
 
-Non-positive numeric values are treated as missing. This is intentional because public assessment
-and square-footage fields with `0` do not support a meaningful per-square-foot or savings
-calculation.
+Every manual correction or addition requires one proof type. The proof is recorded in the payload
+and exports, but the document itself is not uploaded or stored. The owner must include it separately
+with the appeal package.
 
-The public UI asks for user-supplied values only after a review has started and only when public
-fields necessary for comparable analysis are missing. A separate collapsed form accepts one
-optional subject purchase or appraisal after the review starts. Condition, vacancy, and exemption
-documentation remain venue-submission evidence rather than initial lookup inputs.
+## AV reconciliation
+
+Appeal Compass always enforces:
+
+`Total AV = Improvement AV + Land AV`
+
+- Total AV cannot be corrected alone.
+- Correcting Total AV requires manual Improvement AV and Land AV values whose sum matches exactly.
+- If both components are corrected while Total AV is unchanged, their sum must equal the effective
+  Total AV.
+- If exactly one component is corrected, the owner either enters the other component manually or
+  authorizes automatic recalculation while Total AV stays unchanged.
+- Automatic reconciliation labels the counterpart `derived` and records the subtraction used.
+
+Invalid, nonpositive, impossible, duplicate, or internally inconsistent corrections are rejected by
+the server even if browser state contains them.
+
+## Value evidence
+
+A subject purchase or appraisal is separate from corrected property facts. Only one may be entered
+per analysis, and it requires a value, the appropriate date (including “appraisal effective date”),
+and a proof type. Recorded sale, user-reported purchase, and appraisal remain separate evidence
+candidates; likely duplicate transactions are flagged rather than silently removed.

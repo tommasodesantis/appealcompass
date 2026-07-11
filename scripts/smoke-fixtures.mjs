@@ -1,77 +1,82 @@
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://127.0.0.1:8787";
-const requiredStepOne = "ownershipType=individual";
-const ptabStepOne = "ownershipType=individual&borNoticeReceived=yes";
+const stepOne = {
+  jurisdiction: "cook_county_il",
+  venue: "assessor",
+  ownershipType: "individual",
+  borNoticeReceived: null,
+  borNoticeDate: null,
+  today: "2026-05-01",
+};
+
+const analysisBody = (overrides = {}) => ({
+  pin: "03-00-000-000-0001",
+  stepOne,
+  corrections: [],
+  valueEvidence: null,
+  revision: 1,
+  ...overrides,
+});
 
 const checks = [
   {
-    label: "assessor sample",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&${requiredStepOne}`,
-    expect: ["\"venue\":\"assessor\"", "\"tier\":\"STRONG\""],
+    label: "subject review",
+    path: "/api/subject?demo=1&pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&today=2026-05-01",
+    expect: ['"phase":"subject"', '"publicParcel"', '"propertyCards"'],
   },
   {
-    label: "bor sample",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=bor&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"venue\":\"bor\"", "\"What's Next?\""],
+    label: "confirmed analysis",
+    path: "/api/analysis?demo=1",
+    init: { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(analysisBody()) },
+    expect: ['"phase":"analysis"', '"evidenceCandidates"', '"comparableSummary"'],
   },
   {
-    label: "ptab sample",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&${ptabStepOne}&borNoticeDate=2026-05-20`,
-    expect: ["\"venue\":\"ptab\"", "\"What's Next?\""],
+    label: "documented correction",
+    path: "/api/analysis?demo=1",
+    init: {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        analysisBody({
+          revision: 2,
+          corrections: [
+            { field: "buildingSqft", value: 1900, proofType: "official_property_record_card" },
+          ],
+        }),
+      ),
+    },
+    expect: ['"user_corrected"', '"buildingSqft":1900'],
   },
   {
-    label: "ptab awaiting notice",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&ownershipType=individual&borNoticeReceived=no`,
-    expect: ["\"actionStatus\":\"upcoming\"", "Waiting for BOR written notice"],
+    label: "multi-card subject",
+    path: "/api/subject?demo=1&pin=03-00-000-000-0050&venue=assessor&ownershipType=individual&today=2026-05-01",
+    expect: ['"cardCount":2', '"cardNumber":"2"'],
   },
   {
-    label: "ptab expired",
-    path: `/api/case?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-07-06&${ptabStepOne}&borNoticeDate=2026-05-20`,
-    expect: ["\"actionStatus\":\"expired\"", "2026-06-22"],
+    label: "missing blocking field",
+    path: "/api/subject?demo=1&pin=03-00-000-000-0030&venue=bor&ownershipType=individual&today=2026-05-01",
+    expect: ['"blockingMissingFields":["buildingSqft"'],
   },
   {
-    label: "condo missing data",
-    path: `/api/case?demo=1&pin=03-00-000-000-0020&venue=assessor&today=2026-05-01&${requiredStepOne}`,
-    expect: ["\"status\":\"condo\"", "missing unit sqft"],
+    label: "PTAB awaiting notice",
+    path: "/api/subject?demo=1&pin=03-00-000-000-0001&venue=ptab&ownershipType=individual&borNoticeReceived=no&today=2026-06-01",
+    expect: ['"deadlineState":"awaiting_notice"'],
   },
   {
-    label: "missing sqft",
-    path: `/api/case?demo=1&pin=03-00-000-000-0030&venue=bor&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"status\":\"insufficient_data\"", "Documented building sqft"],
-  },
-  {
-    label: "bor schedule not published",
-    path: `/api/case?demo=1&pin=03-00-000-000-0040&venue=bor&today=2025-07-10&${requiredStepOne}`,
-    expect: ["\"venue\":\"bor\"", "2026 BOR dates not published yet"],
-  },
-  {
-    label: "print ptab",
-    path: `/print?demo=1&pin=03-00-000-000-0001&venue=ptab&today=2026-06-01&${ptabStepOne}&borNoticeDate=2026-05-20`,
-    expect: ["Selected venue", "Illinois PTAB", "Comparable method"],
-  },
-  {
-    label: "print assessor comps",
-    path: `/print?demo=1&pin=03-00-000-000-0001&venue=assessor&today=2026-05-01&${requiredStepOne}`,
-    expect: ["Year built", "Improvement AV/sqft", "Comparable analysis results"],
+    label: "default print packet",
+    path: "/print?demo=1&pin=03-00-000-000-0001&venue=assessor&ownershipType=individual&today=2026-05-01",
+    expect: ["Owner-selected evidence", "Owner-selected comparable rows", "Improvement AV/sqft"],
   },
 ];
 
-const banned = ["PLACEHOLDER", "undefined", "NaN", ">null<"];
-
 for (const check of checks) {
-  const response = await fetch(new URL(check.path, baseUrl));
+  const response = await fetch(new URL(check.path, baseUrl), check.init);
   const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`${check.label} failed with HTTP ${response.status}: ${text.slice(0, 300)}`);
-  }
+  if (!response.ok) throw new Error(`${check.label} failed with HTTP ${response.status}: ${text.slice(0, 300)}`);
   for (const expected of check.expect) {
-    if (!text.includes(expected)) {
-      throw new Error(`${check.label} missing expected text: ${expected}`);
-    }
+    if (!text.includes(expected)) throw new Error(`${check.label} missing expected text: ${expected}`);
   }
-  for (const marker of banned) {
-    if (text.includes(marker)) {
-      throw new Error(`${check.label} contained banned text: ${marker}`);
-    }
+  for (const marker of ["PLACEHOLDER", "undefined", "NaN", ">null<"]) {
+    if (text.includes(marker)) throw new Error(`${check.label} contained banned text: ${marker}`);
   }
   console.log(`ok - ${check.label}`);
 }

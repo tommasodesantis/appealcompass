@@ -1,0 +1,37 @@
+{
+  "parcel": {
+    "pin": "03000000000050",
+    "property_class": "203",
+    "township_name": "Rogers Park",
+    "township_code": "01",
+    "tax_code": "10001",
+    "neighborhood": "0101",
+    "building_sqft": 1800,
+    "land_sqft": 3600,
+    "year_built": 1925,
+    "lat": 41.9901,
+    "lon": -87.6971,
+    "current_assessment_year": 2025,
+    "current_av": 60000,
+    "current_improvement_av": 50000,
+    "current_land_av": 10000,
+    "card_count": 2,
+    "is_multicard": true,
+    "card_classes": ["203"]
+  },
+  "property_cards": [
+    { "card_number": "1", "property_class": "203", "building_sqft": 1100, "year_built": 1920 },
+    { "card_number": "2", "property_class": "203", "building_sqft": 700, "year_built": 1930 }
+  ],
+  "assessment_history": [
+    { "year": 2025, "mailed_av": 60000, "certified_av": null, "board_av": null, "final_av": 60000 }
+  ],
+  "subject_sales": [],
+  "comparables": [
+    { "pin": "03000000000051", "property_class": "203", "township_code": "01", "building_sqft": 1780, "year_built": 1924, "sale_date": "2024-01-10", "sale_price": 410000, "av": 48000, "improvement_av": 38000, "land_av": 10000, "land_sqft": 3600, "assessment_year": 2025, "neighborhood": "0101", "lat": 41.9902, "lon": -87.6972, "card_count": 2, "is_multicard": true },
+    { "pin": "03000000000052", "property_class": "203", "township_code": "01", "building_sqft": 1820, "year_built": 1926, "sale_date": "2023-06-10", "sale_price": 430000, "av": 49000, "improvement_av": 39000, "land_av": 10000, "land_sqft": 3600, "assessment_year": 2025, "neighborhood": "0101", "lat": 41.9903, "lon": -87.6973, "card_count": 2, "is_multicard": true },
+    { "pin": "03000000000053", "property_class": "203", "township_code": "01", "building_sqft": 1800, "year_built": 1925, "sale_date": "2022-08-10", "sale_price": 420000, "av": 50000, "improvement_av": 40000, "land_av": 10000, "land_sqft": 3600, "assessment_year": 2025, "neighborhood": "0101", "lat": 41.9904, "lon": -87.6974, "card_count": 2, "is_multicard": true },
+    { "pin": "03000000000054", "property_class": "203", "township_code": "01", "building_sqft": 1760, "year_built": 1922, "sale_date": null, "sale_price": null, "av": 47000, "improvement_av": 37000, "land_av": 10000, "land_sqft": 3600, "assessment_year": 2025, "neighborhood": "0101", "lat": 41.9905, "lon": -87.6975, "card_count": 2, "is_multicard": true }
+  ],
+  "data_warnings": []
+}

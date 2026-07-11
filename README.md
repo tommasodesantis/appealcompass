@@ -1,90 +1,153 @@
 # Appeal Compass
 
-Appeal Compass is a webapp for screening residential parcels for property-tax appeal evidence. It
-is designed to support multiple jurisdictions over time; Cook County, Illinois is the first
-implemented jurisdiction.
+Appeal Compass is an open-source screening tool for individual residential homeowners exploring
+property-tax appeal evidence. Cook County, Illinois is the first supported jurisdiction.
 
-It loads public county data server-side, helps a homeowner evaluate the selected Assessor, Board of
-Review, or PTAB path, and generates a print-optimized evidence packet that can be saved as PDF from
-the browser.
+The application keeps official public values, confirmed homeowner corrections, comparable
+evidence, savings calculations, and export selections separate. It does not file an appeal,
+collect documents, recommend a result, or guarantee a reduction.
 
-## Why this tool?
+## User flow
 
-Property taxes are rising in many jurisdictions, and homeowners often have to navigate appeal rules
-without affordable, practical software support. This project exists because there was no
-open-source DIY property-tax-appeal tool built to help individual homeowners screen their own case.
+1. The homeowner chooses Cook County, Assessor/BOR/PTAB, ownership type, any required PTAB notice
+   answers, and a PIN.
+2. `GET /api/subject` returns only the public subject facts, assessment values, recorded subject
+   sales, raw residential property-card rows, reconciliation notes, and routing metadata.
+3. The homeowner confirms the facts or enters one or more documented corrections. A recent subject
+   purchase or appraisal may be entered at this stage; purchase and appraisal cannot be combined.
+4. `POST /api/analysis` reloads the public subject, validates corrections, builds a distinct
+   effective subject, re-queries comparables using effective class and township, and recomputes all
+   summaries, evidence candidates, and method-specific savings calculations.
+5. The homeowner can filter and sort the table without changing the fixed summary groups, select
+   comparables, explore separate savings methods, and independently choose evidence for the packet.
 
-## What It Does
+Editing and reconfirming subject data increments the analysis revision and clears every stale table
+selection, savings result, and packet selection.
 
-- Looks up a residential parcel by PIN.
-- Screens public data for Improvement AV/sqft uniformity, sale/appraisal, factual-error,
-  land-component, and assessment-shock evidence.
-- Notes other possible appeal factors the homeowner may document directly, such as condition,
-  vacancy, demolition, and exemption-related statuses.
-- Lets the homeowner explicitly choose Cook County Assessor, Cook County Board of Review, or
-  Illinois PTAB and reports the selected venue's current window status.
-- Shows deadlines, days remaining, official-source links, warning messages, comparable evidence,
-  estimated savings assumptions, and a venue-specific checklist.
-- Uses an approximate parcel-specific Cook County Clerk tax-code rate when available, otherwise
-  labels the 10% county default assumption used for savings estimates.
-- Shows comparable PINs, distance, neighborhood, class, building facts, latest usable sale,
-  Improvement AV/sqft, and similarity score.
-- Lets users filter comparable evidence by similarity-score strictness and sale recency. Older sales
-  remain clearly labeled as context and do not drive the assessment comparison.
-- Paginates the on-screen comparable table at 10 rows by default, with 5, 10, 25, and 50-row
-  options.
-- Runs a separate Land AV/land sqft check so lot-size effects and possible land/factual-error
-  issues are not confused with building uniformity evidence.
-- Requests user-supplied values only after review, and only for missing public fields needed for
-  comparable analysis.
-- Produces a concise printable comparable-analysis packet at `/print`, with a user-selected limit
-  of 3, 5, or 10 comparable homes and no homeowner-facing deadline-status section.
-- Downloads the similarity-filtered selected pool, full selected similar-home pool, and savings
-  assumptions as a `.xlsx` workbook. Higher-assessed rows remain visible for transparency.
-- Restores the last successful in-tab assessment from `sessionStorage` when a user returns from the
-  print page.
-- Provides one Turnstile-protected feedback form for problems and feature requests, plus a separate
-  commercial-interest contact form, when deployment secrets are configured.
-- Applies Cloudflare per-IP rate limits of 10 case/print requests per minute and 2 feedback/contact
-  submissions per minute.
+## Corrections and provenance
 
-## What It Does Not Do
+The payload and exports retain both `publicParcel` and `effectiveParcel`. Confirmed corrections
+override public values for downstream calculations while the original public values remain
+auditable. Each displayed subject field has one provenance value:
 
-- It is NOT LEGAL ADVICE.
-- It does not file an appeal for you.
-- It does not represent LLCs, corporations, condo associations, or other entities. Those filers
-  generally need an attorney.
-- It does not guess missing deadlines or facts. PTAB dates require the date on the written BOR
-  decision notice and explain that the later Cook County township-transmission date may control.
-- It does not promise savings. Estimated savings are ranges using the configured equalizer and
-  tax-rate assumptions, including the shown Clerk tax-code rate or fallback default.
-- It does not currently determine whether a homeowner qualifies for an exemption. A future
-  questionnaire may help owners understand whether they might qualify for an exemption, but official
-  eligibility must still be verified with the venue.
+- `public`
+- `user_corrected`
+- `user_added`
+- `derived`
 
-## Appeal Ladder
+Every manual correction requires a proof type. Appeal Compass does not accept uploads; the owner
+must include the selected proof separately with the appeal package. If “Other documented proof” is
+selected, a description is required.
 
-1. Cook County Assessor appeal: first-level appeal during the township filing window. This is also
-   where property-description errors and Certificates of Error for prior-year factual errors or
-   missed exemptions are surfaced.
-2. Board of Review appeal: second-level appeal under the BOR township calendar and official rules.
-3. Illinois Property Tax Appeal Board: state-level appeal after a BOR decision. PTAB filing is due
-   within 30 days of the written BOR decision notice or the later Cook County township-transmission
-   date. The app shows a conservative notice-based date and shifts a weekend or Illinois
-   legal-holiday expiration to the next business day.
+Total AV must equal Improvement AV plus Land AV. Total AV cannot be corrected alone. When one AV
+component changes, the owner either enters the other component or authorizes an automatic
+recalculation that is stored and exported as a derived value.
 
-Every deadline shown by the app links users back to the official venue source and tells them to
-verify before filing.
+## Comparable analysis
 
-## Local Development
+Venue-specific matching requirements run before similarity scoring. The score remains:
 
-Install dependencies:
+- 50% building-size difference
+- 30% year-built difference
+- 20% distance
+
+Lower scores are more similar. The displayed universe ends at `0.50`:
+
+- Excellent: `0.00–0.10`
+- Good: `>0.10–0.20`
+- Decent: `>0.20–0.35`
+- Broad: `>0.35–0.50`
+
+Broad rows are context only. Only rows through `0.35` can drive uniformity, comparable-sales, or
+land savings calculations.
+
+“Top” always means most similar, ordered by ascending similarity. Summary groups are calculated
+from the complete displayed universe and never change with table filters, sorting, or pagination:
+
+- Top 25%: first `ceil(N × 0.25)` rows
+- Top 50%: first `ceil(N × 0.50)` rows
+- Top 75%: first `ceil(N × 0.75)` rows
+- All: all displayed rows
+
+## Evidence and savings
+
+Evidence candidates are independent. Each reports availability, selectability, a status, a short
+reason, the Appeal Compass screening threshold, the venue's official rule summary and source, data
+used, limitations, and any calculation inputs. There is no aggregate score or automatic
+recommendation.
+
+Savings methods are also independent:
+
+- Uniformity
+- Recorded subject sale
+- User-reported subject purchase
+- User-provided appraisal
+- Comparable-sales market evidence
+- Land overassessment
+
+Comparable-sales screening uses the first nested actionable group with at least three recent sales:
+
+`median(sale price ÷ comparable building sqft) × effective subject building sqft`
+
+The result is an unadjusted preliminary supported market value, not an appraisal. Land screening
+uses the first nested actionable group with at least three usable land rows:
+
+`median comparable Land AV/sqft × effective subject land sqft`
+
+Each selected method gets its own calculation card. Tax estimates retain:
+
+`estimated tax = AV × state equalizer × tax rate`
+
+The point estimate is shown with a ±20% range and the tax-rate source. Methods are never merged into
+a best, combined, or recommended result. Deadline information appears once with savings results.
+
+## Evidence packet and XLSX
+
+`POST /api/packet` rebuilds and validates the analysis from the submitted PIN, Step 1 choices,
+corrections, value evidence, selected evidence types, and comparable PINs. The jurisdiction-facing
+PDF includes only selected evidence and selected comparable rows. It excludes tax savings,
+deadlines, filing instructions, official-rule links, and homeowner checklists.
+
+The XLSX always contains:
+
+1. Subject & Corrections
+2. Selected Comparables
+3. All Comparables through similarity `0.50`
+4. Evidence Summary
+5. One calculation sheet for each selected savings method
+
+`GET /print` remains available as a backward-compatible default packet.
+
+## Data and operational safeguards
+
+Live county data is fetched only by the Worker. The browser never receives the Socrata token.
+Current sources are documented in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+
+The existing safeguards remain in place: bounded Socrata queries, a capped comparable pool, one
+batched comparable-sale query, 12-hour cache, request coalescing, per-case outbound concurrency of
+2, assessment concurrency of 4, FIFO queueing with a 60-second timeout, and Cloudflare rate
+limiting. Fixture mode is available with `demo=1` for local tests.
+
+Useful endpoints:
+
+- `GET /api/health`
+- `GET /api/queue`
+- `GET /api/subject`
+- `POST /api/analysis`
+- `POST /api/packet`
+- `GET /print` (backward compatibility)
+- `POST /api/report`
+- `POST /api/contact`
+- `GET /methodology`
+
+## Local development
 
 ```powershell
 npm install
+npm run dev
 ```
 
-Create `.dev.vars` for local Wrangler development:
+Optional local secrets belong in `.dev.vars`:
 
 ```powershell
 SOCRATA_APP_TOKEN=your_token_here
@@ -93,45 +156,11 @@ GITHUB_ISSUES_TOKEN=your_tdsdesa_bot_github_token_here
 RESEND_API_KEY=your_resend_api_key_here
 ```
 
-Secrets stay server-side. Do not put Socrata tokens, GitHub tokens, Resend API keys, or Turnstile
-secret keys in committed files, browser code, logs, or reports.
-
-Public deployment constants live in `src/domain/publicConfig.ts`:
-
-- `TURNSTILE_SITE_KEY`: public Turnstile site key used by the report and contact widgets.
-
-`GITHUB_ISSUES_TOKEN` must authenticate as `tdsdesa-bot`. The Worker checks the token owner before
-every issue creation and refuses to post when the identity differs.
-
-Run locally:
-
-```powershell
-npm run dev
-```
-
-Then open `http://127.0.0.1:8787`.
-
-Useful endpoints:
-
-- `GET /api/health`
-- `GET /api/queue`
-- `GET /api/case?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual`
-- `POST /api/report`
-- `POST /api/contact`
-- `GET /print?pin=03-00-000-000-0001&venue=assessor&ownershipType=individual`
-- `GET /methodology`
-
-Street-address lookup and example-property browsing are not public features. Users should recover
-their PIN from the Cook County Property Tax Portal and enter it directly.
-
-## Testing
+Run the full local gate:
 
 ```powershell
 npm run verify
 ```
-
-`verify` builds the tiny browser bundle, runs Biome linting, TypeScript typechecking, and all
-Vitest tests.
 
 Fixture smoke against a running local Worker:
 
@@ -140,47 +169,8 @@ npm run dev
 npm run smoke:fixtures
 ```
 
-## Data Sources
-
-The Worker reads Cook County Socrata datasets server-side:
-
-- Parcel universe: `nj4t-kc8j`
-- Assessed values: `uzyt-m557`
-- Residential characteristics: `x54s-btds`
-- Parcel sales: `wvhk-k5uv`
-
-The app also includes a committed Cook County Clerk tax-code-rate lookup generated from the latest
-verified Clerk Tax Code Agency Rate file and refreshed through the annual update procedure.
-
-See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) and [docs/LEARNINGS.md](docs/LEARNINGS.md) for
-dataset quirks, public-data limits, comparable feasibility findings, concurrency limits, and annual
-update notes.
-
-## Deploying To Cloudflare
-
-This repository is deploy-ready but this project does not deploy automatically.
-
-1. Authenticate Wrangler.
-2. Add the production secrets:
-
-   ```powershell
-   npx wrangler secret put SOCRATA_APP_TOKEN
-   npx wrangler secret put TURNSTILE_SECRET_KEY
-   npx wrangler secret put GITHUB_ISSUES_TOKEN
-   npx wrangler secret put RESEND_API_KEY
-   ```
-
-3. Set the public Turnstile constant in `src/domain/publicConfig.ts` if the report and contact forms
-   should be enabled.
-4. Review `wrangler.jsonc`, including the `CASE_RATE_LIMITER` and `SUBMISSION_RATE_LIMITER`
-   namespaces. Keep namespace IDs unique within the Cloudflare account.
-5. Deploy intentionally:
-
-   ```powershell
-   npx wrangler deploy
-   ```
-
-The browser talks only to the Worker API; the Socrata token is never sent client-side.
+The repository is deploy-ready but does not deploy automatically. Deploy only through an explicit,
+separate release action.
 
 ## License
 

@@ -1,11 +1,14 @@
-import { parseComparableSaleFilter } from "../domain/comparableSaleFilter";
 import { NotFoundError, UnsupportedPropertyError, UserInputError } from "../domain/errors";
-import { parsePrintComparableLimit } from "../domain/printOptions";
 import { GITHUB_ISSUES_REPOSITORY } from "../domain/publicConfig";
-import { parseSimilarityMax } from "../domain/similarityBands";
 import { appShell } from "./appShell";
 import { CloudflareCacheStore, sharedMemoryCache } from "./cache";
-import { buildCasePayload } from "./casePayload";
+import {
+  analysisRequestFromParams,
+  buildAnalysisPayload,
+  buildSubjectPayload,
+  parseAnalysisRequest,
+  parsePacketRequest,
+} from "./casePayload";
 import { FixtureRepository } from "./fixtureRepository";
 import { ConcurrencyLimiter, QueueTimeoutError } from "./limiter";
 import { QUEUED_MESSAGE } from "./messages";
@@ -24,6 +27,7 @@ export type RuntimeEnv = Partial<Env> & OptionalSecrets;
 const ASSESSMENT_CONCURRENCY = 4;
 const ASSESSMENT_QUEUE_TIMEOUT_MS = 60_000;
 const REPORT_PAYLOAD_LIMIT = 10_000;
+const ANALYSIS_PAYLOAD_LIMIT = 75_000;
 const CONTACT_RECIPIENT = "tommaso.desantis@mail.com";
 const EXPECTED_GITHUB_ISSUE_ACTOR = "tdsdesa-bot";
 const RESEND_EMAILS_URL = "https://api.resend.com/emails";
@@ -47,7 +51,8 @@ interface RepositorySelection {
 interface WorkerOptions {
   assessmentLimiter?: ConcurrencyLimiter;
   queueTimeoutMs?: number;
-  caseBuilder?: typeof buildCasePayload;
+  subjectBuilder?: typeof buildSubjectPayload;
+  analysisBuilder?: typeof buildAnalysisPayload;
   repositoryFactory?: (url: URL, env: RuntimeEnv) => RepositorySelection;
 }
 
@@ -129,6 +134,20 @@ async function contactJson(request: Request): Promise<Record<string, unknown>> {
     throw new UserInputError("Contact payload is invalid.");
   }
   return parsed as Record<string, unknown>;
+}
+
+async function boundedJson(request: Request, maxLength = ANALYSIS_PAYLOAD_LIMIT): Promise<unknown> {
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > maxLength) {
+    throw new UserInputError("Request payload is too large.");
+  }
+  const text = await request.text();
+  if (text.length > maxLength) throw new UserInputError("Request payload is too large.");
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new UserInputError("Request payload is invalid JSON.");
+  }
 }
 
 async function verifyTurnstile(
@@ -508,15 +527,12 @@ async function handleContact(request: Request, env: RuntimeEnv): Promise<Respons
 export function createWorker(options: WorkerOptions = {}): WorkerHandler {
   const assessmentLimiter = options.assessmentLimiter ?? sharedAssessmentLimiter;
   const queueTimeoutMs = options.queueTimeoutMs ?? ASSESSMENT_QUEUE_TIMEOUT_MS;
-  const caseBuilder = options.caseBuilder ?? buildCasePayload;
+  const subjectBuilder = options.subjectBuilder ?? buildSubjectPayload;
+  const analysisBuilder = options.analysisBuilder ?? buildAnalysisPayload;
   const repositoryFactory = options.repositoryFactory ?? repositoryFor;
 
-  async function buildQueuedCasePayload(
-    repo: CaseRepository,
-    params: URLSearchParams,
-    demo: boolean,
-  ) {
-    return assessmentLimiter.run(() => caseBuilder(repo, params, demo), {
+  async function buildQueued<T>(operation: () => Promise<T>): Promise<T> {
+    return assessmentLimiter.run(operation, {
       maxQueueWaitMs: queueTimeoutMs,
     });
   }
@@ -556,7 +572,7 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
         return handleContact(request, env);
       }
 
-      if (url.pathname === "/api/case") {
+      if (url.pathname === "/api/subject") {
         try {
           if (await isRateLimited(env.CASE_RATE_LIMITER, request)) {
             return rateLimitedResponse(
@@ -567,7 +583,78 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
             throw new UserInputError("Enter a Cook County PIN.");
           }
           const { repo, demo } = repositoryFactory(url, env);
-          return json(await buildQueuedCasePayload(repo, url.searchParams, demo));
+          return json(await buildQueued(() => subjectBuilder(repo, url.searchParams, demo)));
+        } catch (error) {
+          return errorResponse(error);
+        }
+      }
+
+      if (url.pathname === "/api/analysis") {
+        try {
+          if (request.method !== "POST") {
+            return json(
+              { ok: false, error: { kind: "method", message: "Use POST for analysis." } },
+              405,
+            );
+          }
+          if (await isRateLimited(env.CASE_RATE_LIMITER, request)) {
+            return rateLimitedResponse(
+              "Too many property searches from this connection. Try again shortly.",
+            );
+          }
+          const parsed = parseAnalysisRequest(await boundedJson(request));
+          const { repo, demo } = repositoryFactory(url, env);
+          return json(await buildQueued(() => analysisBuilder(repo, parsed, demo)));
+        } catch (error) {
+          return errorResponse(error);
+        }
+      }
+
+      if (url.pathname === "/api/case") {
+        try {
+          if (await isRateLimited(env.CASE_RATE_LIMITER, request)) {
+            return rateLimitedResponse(
+              "Too many property searches from this connection. Try again shortly.",
+            );
+          }
+          const { repo, demo } = repositoryFactory(url, env);
+          return json(
+            await buildQueued(() =>
+              analysisBuilder(repo, analysisRequestFromParams(url.searchParams), demo),
+            ),
+          );
+        } catch (error) {
+          return errorResponse(error);
+        }
+      }
+
+      if (url.pathname === "/api/packet") {
+        try {
+          if (request.method !== "POST") {
+            return json(
+              { ok: false, error: { kind: "method", message: "Use POST for packets." } },
+              405,
+            );
+          }
+          if (await isRateLimited(env.CASE_RATE_LIMITER, request)) {
+            return rateLimitedResponse(
+              "Too many evidence-packet requests from this connection. Try again shortly.",
+            );
+          }
+          const parsed = parsePacketRequest(await boundedJson(request));
+          const { repo, demo } = repositoryFactory(url, env);
+          const payload = await buildQueued(() => analysisBuilder(repo, parsed, demo));
+          const availablePins = new Set(
+            payload.analysis.comparableSummary.universe.map((row) => row.comparable.pin),
+          );
+          if (parsed.selection.comparablePins.some((pin) => !availablePins.has(pin))) {
+            throw new UserInputError(
+              "A selected comparable is not part of the current confirmed analysis.",
+            );
+          }
+          return new Response(buildPrintReport(payload, parsed.selection), {
+            headers: { "content-type": "text/html;charset=utf-8" },
+          });
         } catch (error) {
           return errorResponse(error);
         }
@@ -584,17 +671,20 @@ export function createWorker(options: WorkerOptions = {}): WorkerHandler {
             throw new UserInputError("Enter a Cook County PIN.");
           }
           const { repo, demo } = repositoryFactory(url, env);
-          const payload = await buildQueuedCasePayload(repo, url.searchParams, demo);
-          return new Response(
-            buildPrintReport(payload, {
-              maxSimilarity: parseSimilarityMax(url.searchParams.get("maxSimilarity")),
-              saleFilter: parseComparableSaleFilter(url.searchParams.get("saleFilter")),
-              maxComps: parsePrintComparableLimit(url.searchParams.get("maxComps")),
-            }),
-            {
-              headers: { "content-type": "text/html;charset=utf-8" },
-            },
+          const payload = await buildQueued(() =>
+            analysisBuilder(repo, analysisRequestFromParams(url.searchParams), demo),
           );
+          const selection = {
+            evidenceTypes: payload.analysis.evidenceCandidates
+              .filter((candidate) => candidate.available)
+              .map((candidate) => candidate.type),
+            comparablePins: payload.analysis.comparableSummary.universe
+              .slice(0, 5)
+              .map((row) => row.comparable.pin),
+          };
+          return new Response(buildPrintReport(payload, selection), {
+            headers: { "content-type": "text/html;charset=utf-8" },
+          });
         } catch (error) {
           return errorResponse(error);
         }

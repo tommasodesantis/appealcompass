@@ -1,24 +1,16 @@
 export type Venue = "assessor" | "bor" | "ptab";
 export type Jurisdiction = "cook_county_il";
 export type ResolvedVenue = "assessor" | "bor" | "ptab" | "closed";
-export type EvidenceTier = "STRONG" | "MODERATE" | "LIMITED";
 export type ActionStatus = "open" | "upcoming" | "closed" | "urgent" | "expired" | "needs_input";
-export type ComparableStatus = "ok" | "condo" | "insufficient_data";
-export type ArgumentStrength = "strong" | "supporting";
 export type DeadlineState = "published" | "not_published" | "awaiting_notice" | "expired";
 export type NoticeSeverity = "caution" | "info";
-export type ValueEvidenceActionability = "none" | "context_only" | "actionable";
 export type AssessmentStage = "board" | "certified" | "mailed" | null;
+
 export interface AssessmentStages {
   total: AssessmentStage;
   improvement: AssessmentStage;
   land: AssessmentStage;
 }
-export type ValueEvidenceSource =
-  | "recorded_sale"
-  | "reported_purchase"
-  | "reported_appraisal"
-  | null;
 
 export interface Parcel {
   pin: string;
@@ -53,11 +45,19 @@ export interface Parcel {
   characteristicsReconciled: boolean;
 }
 
+export interface PropertyCardDetail {
+  cardNumber: string;
+  propertyClass: string | null;
+  buildingSqft: number | null;
+  yearBuilt: number | null;
+}
+
 export interface Comparable {
   pin: string;
   pinFormatted: string;
   address: string;
   propertyClass: string | null;
+  townshipCode: string | null;
   buildingSqft: number | null;
   yearBuilt: number | null;
   saleDate: string | null;
@@ -94,17 +94,69 @@ export interface AssessmentHistoryRow {
   finalAv: number | null;
 }
 
-export interface UserEvidence {
-  purchasePrice: number | null;
-  purchaseDate: string | null;
-  appraisalValue: number | null;
-  appraisalDate: string | null;
-  ownershipType: "individual" | "llc" | "corporation" | "other";
-  borNoticeReceived: boolean | null;
-  borNoticeDate: string | null;
-  actualSqft: number | null;
-  actualAv: number | null;
-  actualImprovementAv: number | null;
+export interface SubjectRecord {
+  publicParcel: Parcel;
+  propertyCards: PropertyCardDetail[];
+  assessmentHistory: AssessmentHistoryRow[];
+  subjectSales: Sale[];
+  dataWarnings: string[];
+}
+
+export type SubjectField =
+  | "propertyClass"
+  | "townshipName"
+  | "neighborhood"
+  | "buildingSqft"
+  | "landSqft"
+  | "yearBuilt"
+  | "currentAv"
+  | "currentImprovementAv"
+  | "currentLandAv"
+  | "cardCount";
+
+export type FieldProvenance = "public" | "user_corrected" | "user_added" | "derived";
+
+export type ProofType =
+  | "official_property_record_card"
+  | "assessment_notice_or_tax_document"
+  | "appraisal"
+  | "survey"
+  | "architectural_plans_or_measurements"
+  | "deed_closing_statement_or_mydec"
+  | "photographs"
+  | "contractor_or_architect_documentation"
+  | "other_documented_proof";
+
+export interface SubjectCorrection {
+  field: SubjectField;
+  value: string | number;
+  proofType: ProofType | null;
+  otherProofDescription?: string | null;
+  reconciliation?: "automatic" | "manual";
+  provenance?: Exclude<FieldProvenance, "public">;
+  derivation?: string | null;
+}
+
+export interface SubjectValueEvidence {
+  type: "purchase" | "appraisal";
+  value: number;
+  date: string;
+  proofType: ProofType;
+  otherProofDescription?: string | null;
+}
+
+export interface EffectiveSubject {
+  publicParcel: Parcel;
+  effectiveParcel: Parcel;
+  provenance: Record<SubjectField, FieldProvenance>;
+  corrections: SubjectCorrection[];
+  blockingMissingFields: SubjectField[];
+  optionalMissingFields: SubjectField[];
+}
+
+export interface AnalysisCase extends SubjectRecord, EffectiveSubject {
+  comparables: Comparable[];
+  subjectValueEvidence: SubjectValueEvidence | null;
 }
 
 export interface DataNotice {
@@ -115,101 +167,132 @@ export interface DataNotice {
   details: string[];
 }
 
-export interface CaseFile {
-  parcel: Parcel;
-  assessmentHistory: AssessmentHistoryRow[];
-  comparables: Comparable[];
-  subjectSales: Sale[];
-  userEvidence: UserEvidence;
-  dataWarnings: string[];
-}
+export type SimilarityBandName = "excellent" | "good" | "decent" | "broad";
 
 export interface ComparableExhibit {
   comparable: Comparable;
-  avPerSqft: number;
+  improvementAvPerSqft: number;
+  landAvPerSqft: number | null;
+  salePricePerSqft: number | null;
   distanceKm: number | null;
   similarity: number;
+  band: SimilarityBandName;
+  recentSale: boolean;
 }
 
-export type MissingComparableFieldName = "actualSqft" | "actualImprovementAv";
+export type SimilarityGroupKey = "top25" | "top50" | "top75" | "all";
 
-export interface MissingComparableField {
-  name: MissingComparableFieldName;
+export interface SimilarityGroupSummary {
+  key: SimilarityGroupKey;
   label: string;
-  helpText: string;
+  count: number;
+  comparablePins: string[];
+  medianImprovementAvPerSqft: number | null;
+  subjectImprovementComparisonPct: number | null;
+  recentSaleCount: number;
+  medianRecentSalePricePerSqft: number | null;
+  preliminarySupportedMarketValue: number | null;
+  impliedMarketValueComparisonPct: number | null;
+  usableLandCount: number;
+  medianLandAvPerSqft: number | null;
+  subjectLandComparisonPct: number | null;
 }
 
-export interface ComparableAnalysis {
-  status: ComparableStatus;
+export interface ComparableSummary {
+  status: "ok" | "insufficient_data" | "condo";
   note: string;
   profileKey: string;
   profileLabel: string;
-  metricLabel: string;
-  missingFields: MissingComparableField[];
-  warnings: string[];
-  missingDataRate: number | null;
   scope: string | null;
-  poolSize: number;
-  actionablePoolSize: number;
-  maxActionableSimilarity: number;
-  subjectAvPerSqft: number | null;
-  medianAvPerSqft: number | null;
-  percentile: number | null;
-  gapPct: number | null;
-  pool: ComparableExhibit[];
-  exhibit: ComparableExhibit[];
-}
-
-export interface LandAssessmentCheck {
-  status: "ok" | "insufficient_data";
-  note: string;
+  warnings: string[];
+  universe: ComparableExhibit[];
+  actionableUniverse: ComparableExhibit[];
+  bandCounts: Record<SimilarityBandName, number>;
+  groups: Record<SimilarityGroupKey, SimilarityGroupSummary>;
+  subjectImprovementAvPerSqft: number | null;
   subjectLandAvPerSqft: number | null;
-  medianLandAvPerSqft: number | null;
-  percentile: number | null;
-  gapPct: number | null;
-  medianComparableLandSqft: number | null;
-  poolSize: number;
-  flagged: boolean;
+  subjectImpliedMarketValue: number | null;
 }
 
-export interface EvidenceArgument {
-  argumentType: string;
-  strength: ArgumentStrength;
-  text: string;
-  targetAv: number | null;
-  estimatedSavings: number | null;
+export type EvidenceType =
+  | "uniformity"
+  | "recorded_sale"
+  | "reported_purchase"
+  | "appraisal"
+  | "comparable_sales"
+  | "land"
+  | "property_corrections";
+
+export type EvidenceStatus =
+  | "promising"
+  | "potentially_useful"
+  | "weak_or_incomplete"
+  | "does_not_support_reduction"
+  | "unavailable";
+
+export interface EvidenceCandidate {
+  type: EvidenceType;
+  name: string;
+  available: boolean;
+  selectable: boolean;
+  status: EvidenceStatus;
+  shortReason: string;
+  screeningRule: string;
+  officialRuleSummary: string;
+  officialRuleUrl: string;
+  dataUsed: string[];
+  limitations: string[];
+  calculationInputs?: Record<string, string | number | null | string[]>;
 }
 
-export interface SavingsAssumption {
+export type SavingsMethod = Exclude<EvidenceType, "property_corrections">;
+
+export interface SavingsCalculation {
+  method: SavingsMethod;
+  evidenceName: string;
+  status: EvidenceStatus;
+  available: boolean;
+  limitation: string | null;
+  formula: string;
+  groupLabel: string | null;
+  comparablePins: string[];
+  comparableCount: number;
+  currentTotalAv: number | null;
+  targetTotalAv: number | null;
+  avReduction: number | null;
+  currentImpliedMarketValue: number | null;
+  evidenceMarketValue: number | null;
+  targetMarketValueEquivalent: number | null;
+  estimatedCurrentTax: number | null;
+  estimatedTargetTax: number | null;
+  annualSavingsPoint: number | null;
+  annualSavingsLow: number | null;
+  annualSavingsHigh: number | null;
+  stateEqualizer: number;
   taxRate: number;
   taxRateSource: string;
-  stateEqualizer: number;
-  low: number;
-  point: number;
-  high: number;
+  assessmentLevel: number;
+  warnings: string[];
+  disclaimer: string;
 }
 
-export interface ValueEvidence {
-  sourceType: ValueEvidenceSource;
-  sourceLabel: string | null;
-  value: number | null;
-  date: string | null;
-  impliedMarketValue: number | null;
-  gapPct: number | null;
-  actionability: ValueEvidenceActionability;
-  explanation: string;
+export interface AnalysisResult {
+  revision: number;
+  subject: EffectiveSubject;
+  propertyCards: PropertyCardDetail[];
+  assessmentHistory: AssessmentHistoryRow[];
+  subjectSales: Sale[];
+  subjectValueEvidence: SubjectValueEvidence | null;
+  comparableSummary: ComparableSummary;
+  evidenceCandidates: EvidenceCandidate[];
+  savingsCalculations: SavingsCalculation[];
+  notices: DataNotice[];
+  warnings: string[];
 }
 
-export interface EvidenceSummary {
-  tier: EvidenceTier;
-  tierMessage: string;
-  comparableAnalysis: ComparableAnalysis;
-  landAssessment: LandAssessmentCheck;
-  arguments: EvidenceArgument[];
-  impliedMarketValue: number | null;
-  valueEvidence: ValueEvidence;
-  savingsAssumptions: SavingsAssumption;
-  disclaimers: string[];
+export interface PacketSelection {
+  evidenceTypes: EvidenceType[];
+  comparablePins: string[];
 }
 
 export interface RouteResult {
@@ -236,29 +319,6 @@ export interface DeadlineItem {
 export interface PacketSection {
   title: string;
   lines: string[];
-}
-
-export function defaultUserEvidence(overrides: Partial<UserEvidence> = {}): UserEvidence {
-  return {
-    purchasePrice: null,
-    purchaseDate: null,
-    appraisalValue: null,
-    appraisalDate: null,
-    ownershipType: "individual",
-    borNoticeReceived: null,
-    borNoticeDate: null,
-    actualSqft: null,
-    actualAv: null,
-    actualImprovementAv: null,
-    ...overrides,
-  };
-}
-
-export function withUserEvidence(caseFile: CaseFile, userEvidence: UserEvidence): CaseFile {
-  return {
-    ...caseFile,
-    userEvidence,
-  };
 }
 
 export function isCondo(parcel: Parcel): boolean {

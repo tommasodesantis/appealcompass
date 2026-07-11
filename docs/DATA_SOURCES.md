@@ -1,74 +1,71 @@
 # Data Sources
 
-All live county data is fetched server-side. The browser never receives the Socrata app token.
+All live county data is fetched server-side. Browser payloads never contain the Socrata app token.
 
 | Source | Dataset ID | Fields used |
 | --- | --- | --- |
-| Parcel universe | `nj4t-kc8j` | `pin`, `class`, `township_name`, `township_code`, `nbhd_code`, `tax_code`, `lat`, `lon`, `year`, `zip_code` |
-| Assessed values | `uzyt-m557` | `pin`, `year`, `mailed_tot`, `certified_tot`, `board_tot`, `mailed_bldg`, `certified_bldg`, `board_bldg`, `mailed_land`, `certified_land`, `board_land` |
-| Residential characteristics | `x54s-btds` | `pin`, `card`, `row_id`, `pin_is_multicard`, `pin_num_cards`, `class`, `township_code`, `year`, building/land sqft, year built, construction/style inputs, beds, baths, amenities |
-| Parcel sales | `wvhk-k5uv` | `pin`, `sale_date`, `sale_price` for subject value evidence and latest comparable-sale display |
-| Clerk tax-code rates | manual Clerk XLSX | Tax code and composite `CodeRate24` from the Cook County Clerk 2024 Tax Code Agency Rate file, retrieved 2026-07-08 from `https://www.cookcountyclerkil.gov/sites/default/files/2026-04/2024-tax-code-agency-rate-file.xlsx` |
+| Parcel universe | `nj4t-kc8j` | PIN, class, township name/code, neighborhood, tax code, coordinates, year, ZIP |
+| Assessed values | `uzyt-m557` | Mailed, certified, and Board Total AV, Improvement AV, Land AV, and year |
+| Residential characteristics | `x54s-btds` | PIN, card identifier, expected card count, class, township, building/land sqft, year built, and venue-profile characteristics |
+| Parcel sales | `wvhk-k5uv` | Sale date and price for subject value evidence and comparable-sale screening |
+| Clerk tax-code rates | Manual Clerk XLSX | Tax code and composite rate from the verified 2024 Tax Code Agency Rate file |
 
-The parcel universe exposes `tax_code`, so the app can map a parcel to the committed Clerk
-composite-rate lookup when that code is available. Cook County Clerk tax-rate reports are published
-as annual files rather than a currently verified Socrata API, so `src/domain/taxRates.ts` must be
-refreshed manually each year from the latest official Clerk Tax Code Agency Rate file or equivalent
-Tax Rate Report extract.
+## Two-phase loading
 
-## Known Limits
+`GET /api/subject` loads only the subject parcel, assessed values, subject sales, and raw individual
+residential property-card rows. It does not fetch a user-facing comparable analysis.
 
-- Parcel-universe rows used by the current public dataset do not include street-address fields.
-  Comparable exhibits identify properties by formatted PIN.
-- Live address search is disabled because the current public parcel-universe dataset does not
-  expose a reliable address field. Users should recover their PIN from the official Cook County
-  Property Tax Portal.
-- The parcel-universe class is checked before characteristics or comparable queries. The current
-  product supports eligible Class 2 dwellings and Class 299 condominiums; commercial, industrial,
-  Class 3 multi-family, special/non-dwelling Class 2, and unknown classes stop before analysis.
-- Configured-year assessed-value rows can exist without AV fields. The app falls back to the latest
-  value-bearing row and warns the user. Each component prefers Board, then certified, then mailed
-  values, and Total AV must reconcile to Improvement AV plus Land AV before automated savings run.
-- Multi-card residential rows are aggregated by parcel and year. Building area and improvement
-  facts are combined across unique cards; parcel land area is counted once. Missing, unsupported,
-  or conflicting card sets suppress automated conclusions and savings.
-- Comparable tables show the most recent usable sale returned by `wvhk-k5uv` for each comparable
-  when available. Nominal or missing sale prices are ignored; rows without usable sale data render
-  "Not available." Sales older than three years before the assessment lien date are labeled as
-  context only. Users may display all assessment comparables, only recent three-year sales, or any
-  row with a recorded sale; sale filtering does not recalculate the assessment analysis.
-- Comparable tables retain both lower- and higher-assessed matches after the active filters. The web
-  table shows 10 rows per page by default, and the print packet includes at most the selected 3, 5,
-  or 10 most-similar rows.
-- Only comparable rows with similarity scores at or below `0.35` drive medians, evidence levels,
-  target assessments, or savings. Broader rows remain visible as context only.
-- Parcel-specific estimated savings use the Clerk tax-code rate when the parcel tax code is present
-  and found in the committed lookup. The committed lookup is labeled approximate. Otherwise the app
-  falls back to the default 10% county assumption and labels that assumption.
-- Condo pools can be sparse. The app uses the measured missing-data bands described in
-  [LEARNINGS.md](LEARNINGS.md).
-- PTAB full-grid evidence is not feasible from public data alone. The results view includes
-  property-record-card fallback guidance. The jurisdiction-facing print packet includes subject
-  specifications, consolidated data notes, a plain-language comparable method, selected rows, and
-  analysis results. It intentionally omits homeowner-facing deadline status.
+`POST /api/analysis` reloads the subject, validates confirmed corrections, builds a separate
+effective parcel, and queries comparables using the effective property class and township. A
+corrected township name is resolved to a current township code before the bounded characteristic,
+assessment, parcel, and batched-sale queries run. Corrected neighborhood, sqft, year built, and card
+count then affect matching and similarity selection.
 
-## Operational Guardrails
+Raw card rows retain card identifier, card class, card building sqft, and card year built. Building
+sqft is summed across unique cards; parcel land is counted once. Expected card count, supported
+classes, complete building areas, and assessment-component arithmetic are reconciled before
+automated analysis.
+
+## Sale windows
+
+A recent comparable sale must have a usable positive price and occur from three years before
+through January 1 of the subject assessment year. Sales after January 1 are excluded from the
+recent-sale calculation. Current date is never used for comparable-sale recency.
+
+The source data does not reliably identify transaction relationships or conditions. Appeal Compass
+does not infer arm's-length status, family transfers, foreclosure, concessions, or similar facts.
+
+## Known public-data limits
+
+- The current parcel universe does not expose reliable street-address fields. Public lookup remains
+  PIN-only.
+- Configured-year assessed-value rows may exist without usable values. The repository can use the
+  latest value-bearing row and reports the limitation.
+- Each AV component prefers Board, then certified, then mailed values. Effective AV values must
+  reconcile arithmetically before affected calculations run.
+- Missing neighborhood, year built, Total AV, land sqft, Land AV, or value evidence disables only
+  the calculations that need it. Missing class, township, building sqft, Improvement AV, or a usable
+  card count/reconciliation blocks core comparable analysis.
+- Condo pools can be sparse and omit private unit attributes such as condition, floor, view,
+  parking, or association information.
+- PTAB public data cannot populate a complete adjusted comparison grid. Output must state that
+  limitation without fabricating missing fields.
+- Comparable-sales estimates are unadjusted for condition, exact location, lot differences,
+  renovations, garages, amenities, concessions, and market time. They are screens, not appraisals.
+- Parcel-specific tax estimates use the committed Clerk tax-code rate when found; otherwise the UI
+  labels the 10% default assumption.
+
+## Operational guardrails
 
 - Cache TTL: 12 hours.
-- Identical in-flight Socrata requests are coalesced within the server instance.
-- Per-case outbound Socrata fetch concurrency is capped at 2.
-- Case and print builds are capped at 4 concurrent assessments per server instance. Extra requests
-  wait in FIFO order instead of increasing Socrata pressure.
-- Queued assessments wait up to 60 seconds. If a request cannot start in that window, the API
-  returns a friendly 503 with retry guidance.
-- `/api/queue` exposes active/queued counts so the browser can show a plain-language busy message
-  while the user waits.
-- Cloudflare Rate Limiting bindings apply a shared 10-per-minute per-IP limit to case and print
-  requests and a shared 2-per-minute per-IP limit to feedback and contact submissions. Rejected
-  requests return HTTP 429 with `Retry-After: 60`.
-- The Socrata app token is read from `SOCRATA_APP_TOKEN` and never committed.
-- The merged problem/feature feedback form requires `TURNSTILE_SECRET_KEY` and
-  `GITHUB_ISSUES_TOKEN`; commercial-interest contact messages require `TURNSTILE_SECRET_KEY` and
-  `RESEND_API_KEY`. Turnstile tokens are validated against the expected form action. The GitHub
-  token must resolve to `tdsdesa-bot` before an issue is created. Secrets are never sent to the
-  browser.
+- Identical in-flight Socrata requests are coalesced per Worker instance.
+- Per-case outbound Socrata concurrency is capped at 2.
+- Comparable queries and the batched sale query are bounded and capped.
+- Subject, analysis, legacy case, print, and packet builds share an assessment limiter capped at 4.
+- Extra builds wait FIFO for up to 60 seconds; timeout returns a friendly retryable `503`.
+- `/api/queue` reports active and queued counts.
+- Case/packet traffic shares the Cloudflare case rate limiter; feedback/contact share the submission
+  rate limiter.
+- Turnstile, GitHub, Resend, and Socrata secrets remain server-side.
+
+The annual refresh procedure is documented in [ANNUAL_UPDATE.md](ANNUAL_UPDATE.md).

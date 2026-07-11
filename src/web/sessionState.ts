@@ -1,76 +1,96 @@
-export const ASSESSMENT_SNAPSHOT_KEY = "appealcompass:lastAssessment";
-const ASSESSMENT_SNAPSHOT_SCHEMA_VERSION = 2;
+import type {
+  EvidenceType,
+  SavingsMethod,
+  SimilarityBandName,
+  SubjectCorrection,
+  SubjectValueEvidence,
+} from "../domain/models";
 
-export interface AssessmentSnapshot<T> {
-  query: URLSearchParams;
-  payload: T;
-  savedAt: string;
+export const APP_SESSION_KEY = "appealcompass:session";
+export const APP_SESSION_SCHEMA_VERSION = 3;
+
+export interface ComparableTableState {
+  bands: SimilarityBandName[];
+  saleFilter: "all" | "recorded" | "recent";
+  propertyClass: string;
+  neighborhood: string;
+  maxDistanceKm: number | null;
+  yearBuiltTolerance: number | null;
+  sortKey: string;
+  sortDirection: "asc" | "desc";
+  page: number;
+  pageSize: 5 | 10 | 25 | 50;
 }
 
-interface StoredAssessmentSnapshot<T> {
-  schemaVersion: number;
-  queryString: string;
-  payload: T;
+export interface AppSessionState<TSubject = unknown, TAnalysis = unknown> {
+  schemaVersion: typeof APP_SESSION_SCHEMA_VERSION;
   savedAt: string;
+  stepOneQuery: string;
+  screen: "step_one" | "subject_review" | "analysis";
+  subjectPayload: TSubject | null;
+  corrections: SubjectCorrection[];
+  valueEvidence: SubjectValueEvidence | null;
+  analysisPayload: TAnalysis | null;
+  analysisRevision: number;
+  table: ComparableTableState;
+  selectedComparablePins: string[];
+  savingsMethods: SavingsMethod[];
+  packetEvidenceTypes: EvidenceType[];
 }
 
-export function serializeAssessmentSnapshot<T>(
-  query: URLSearchParams,
-  payload: T,
+export function serializeSessionState<TSubject, TAnalysis>(
+  state: Omit<AppSessionState<TSubject, TAnalysis>, "schemaVersion" | "savedAt">,
   savedAt = new Date().toISOString(),
 ): string {
   return JSON.stringify({
-    schemaVersion: ASSESSMENT_SNAPSHOT_SCHEMA_VERSION,
-    queryString: query.toString(),
-    payload,
+    ...state,
+    schemaVersion: APP_SESSION_SCHEMA_VERSION,
     savedAt,
-  } satisfies StoredAssessmentSnapshot<T>);
+  } satisfies AppSessionState<TSubject, TAnalysis>);
 }
 
-export function parseAssessmentSnapshot<T>(value: string | null): AssessmentSnapshot<T> | null {
-  if (!value) {
-    return null;
-  }
+export function parseSessionState<TSubject, TAnalysis>(
+  value: string | null,
+): AppSessionState<TSubject, TAnalysis> | null {
+  if (!value) return null;
   try {
-    const parsed = JSON.parse(value) as Partial<StoredAssessmentSnapshot<T>>;
+    const parsed = JSON.parse(value) as Partial<AppSessionState<TSubject, TAnalysis>>;
     if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      parsed.schemaVersion !== ASSESSMENT_SNAPSHOT_SCHEMA_VERSION ||
-      typeof parsed.queryString !== "string" ||
+      parsed.schemaVersion !== APP_SESSION_SCHEMA_VERSION ||
       typeof parsed.savedAt !== "string" ||
-      !("payload" in parsed)
+      typeof parsed.stepOneQuery !== "string" ||
+      !["step_one", "subject_review", "analysis"].includes(String(parsed.screen)) ||
+      !parsed.table ||
+      !Array.isArray(parsed.corrections) ||
+      !Array.isArray(parsed.selectedComparablePins) ||
+      !Array.isArray(parsed.savingsMethods) ||
+      !Array.isArray(parsed.packetEvidenceTypes)
     ) {
       return null;
     }
-    return {
-      query: new URLSearchParams(parsed.queryString),
-      payload: parsed.payload as T,
-      savedAt: parsed.savedAt,
-    };
+    return parsed as AppSessionState<TSubject, TAnalysis>;
   } catch {
     return null;
   }
 }
 
-export function saveAssessmentSnapshot<T>(
+export function saveSessionState<TSubject, TAnalysis>(
   storage: Pick<Storage, "setItem">,
-  query: URLSearchParams,
-  payload: T,
+  state: Omit<AppSessionState<TSubject, TAnalysis>, "schemaVersion" | "savedAt">,
 ): boolean {
   try {
-    storage.setItem(ASSESSMENT_SNAPSHOT_KEY, serializeAssessmentSnapshot(query, payload));
+    storage.setItem(APP_SESSION_KEY, serializeSessionState(state));
     return true;
   } catch {
     return false;
   }
 }
 
-export function loadAssessmentSnapshot<T>(
+export function loadSessionState<TSubject, TAnalysis>(
   storage: Pick<Storage, "getItem">,
-): AssessmentSnapshot<T> | null {
+): AppSessionState<TSubject, TAnalysis> | null {
   try {
-    return parseAssessmentSnapshot<T>(storage.getItem(ASSESSMENT_SNAPSHOT_KEY));
+    return parseSessionState<TSubject, TAnalysis>(storage.getItem(APP_SESSION_KEY));
   } catch {
     return null;
   }
